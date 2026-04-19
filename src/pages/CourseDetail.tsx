@@ -630,7 +630,7 @@ const CourseDetail = () => {
                       <Button
                         size="sm"
                         className="gradient-saffron border-0 text-primary-foreground"
-                        onClick={() => navigate(`/dashboard/live-classes?classId=${lc.id}&room=${lc.room_id}`)}
+                        onClick={() => navigate(`/dashboard/live-classes?classId=${lc.id}`)}
                       >
                         <Play className="w-3 h-3 mr-1" /> Join
                       </Button>
