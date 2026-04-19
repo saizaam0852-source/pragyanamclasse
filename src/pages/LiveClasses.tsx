@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -90,6 +90,7 @@ const ParticipantToast = ({ name, action }: { name: string; action: "joined" | "
 const LiveClasses = () => {
   const { user, role, profile } = useAuth();
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const isMobile = useIsMobile();
   const [classes, setClasses] = useState<any[]>([]);
   const [teacherProfiles, setTeacherProfiles] = useState<Record<string, any>>({});
@@ -130,15 +131,23 @@ const LiveClasses = () => {
   }, []);
 
   useEffect(() => {
-    const roomFromQuery = searchParams.get("room");
     const classIdFromQuery = searchParams.get("classId");
 
-    if (roomFromQuery && classIdFromQuery) {
-      setActiveRoom((current) => current ?? roomFromQuery);
-      setActiveClassId((current) => current ?? classIdFromQuery);
-      setShowChat(!isMobile);
+    if (!classIdFromQuery) return;
+
+    const requestedClass = classes.find((item) => item.id === classIdFromQuery);
+    if (!requestedClass) return;
+
+    if (!isTeacherOrAdmin && requestedClass.status !== "live") {
+      toast.error("Class has not started yet.");
+      navigate("/dashboard/live-classes", { replace: true });
+      return;
     }
-  }, [searchParams, isMobile]);
+
+    setActiveRoom((current) => current ?? requestedClass.room_id);
+    setActiveClassId((current) => current ?? requestedClass.id);
+    setShowChat(!isMobile);
+  }, [searchParams, classes, isMobile, isTeacherOrAdmin, navigate]);
 
   const handleStartClass = async (classItem: any) => {
     const { data, error } = await supabase.from("live_classes")
