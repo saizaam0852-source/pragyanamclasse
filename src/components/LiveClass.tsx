@@ -6,8 +6,8 @@ import { ZegoUIKitPrebuilt } from "@zegocloud/zego-uikit-prebuilt";
 // 🔑 PASTE YOUR ZEGOCLOUD CREDENTIALS HERE
 // Get them from: https://console.zegocloud.com/
 // ════════════════════════════════════════════════════════════════
-const ZEGO_APP_ID = 0; // ← Replace 0 with your AppID (number)
-const ZEGO_SERVER_SECRET = ""; // ← Replace "" with your ServerSecret (string)
+const ZEGO_APP_ID = 1303117872;
+const ZEGO_SERVER_SECRET = "1d3468cc0670f7a121559be2b7a700cd";
 // ════════════════════════════════════════════════════════════════
 
 // Email that should always be treated as Host/Teacher
