@@ -925,6 +925,7 @@ export type Database = {
       }
     }
     Functions: {
+      backfill_profile_from_auth_metadata: { Args: never; Returns: undefined }
       get_test_questions_safe: {
         Args: { _test_id: string }
         Returns: {
@@ -939,6 +940,7 @@ export type Database = {
           sort_order: number
         }[]
       }
+      get_total_revenue: { Args: never; Returns: number }
       get_user_role: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["app_role"]
