@@ -66,7 +66,7 @@ const LiveClass = ({ roomID, forceHost, onLeave, className }: LiveClassProps) =>
       },
       showPreJoinView: false,
       showUserList: false,
-      showChatView: false,
+      showTextChat: false,
       showRoomDetailsButton: false,
       sharedLinks: [],
       onLeaveRoom: () => {
