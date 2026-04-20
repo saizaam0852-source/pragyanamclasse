@@ -4,6 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/DashboardLayout";
 import LiveChatSidebar from "@/components/LiveChatSidebar";
+import LiveClass from "@/components/LiveClass";
 import { Video, Calendar, Clock, Users, Play, X, Trash2, Maximize2, Minimize2, Monitor } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
