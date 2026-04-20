@@ -12,35 +12,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useIsMobile } from "@/hooks/use-mobile";
 
 const MAX_STUDENTS_PER_CLASS = 100;
-let jitsiApiLoader: Promise<void> | null = null;
-
-const ensureJitsiApi = () => {
-  if ((window as any).JitsiMeetExternalAPI) return Promise.resolve();
-  if (jitsiApiLoader) return jitsiApiLoader;
-
-  jitsiApiLoader = new Promise<void>((resolve, reject) => {
-    const existingScript = document.querySelector('script[data-jitsi-external-api="true"]') as HTMLScriptElement | null;
-    const handleLoad = () => resolve();
-    const handleError = () => { jitsiApiLoader = null; reject(new Error("Failed to load Jitsi API")); };
-
-    if (existingScript) {
-      if ((window as any).JitsiMeetExternalAPI) { resolve(); return; }
-      existingScript.addEventListener("load", handleLoad, { once: true });
-      existingScript.addEventListener("error", handleError, { once: true });
-      return;
-    }
-
-    const script = document.createElement("script");
-    script.src = "https://meet.jit.si/external_api.js";
-    script.async = true;
-    script.dataset.jitsiExternalApi = "true";
-    script.onload = handleLoad;
-    script.onerror = handleError;
-    document.head.appendChild(script);
-  });
-
-  return jitsiApiLoader;
-};
 
 const ElapsedTimer = ({ startTime }: { startTime: string }) => {
   const [elapsed, setElapsed] = useState("");
