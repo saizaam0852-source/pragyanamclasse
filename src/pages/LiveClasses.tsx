@@ -4,6 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/DashboardLayout";
 import LiveChatSidebar from "@/components/LiveChatSidebar";
+import LiveClass from "@/components/LiveClass";
 import { Video, Calendar, Clock, Users, Play, X, Trash2, Maximize2, Minimize2, Monitor } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -11,35 +12,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useIsMobile } from "@/hooks/use-mobile";
 
 const MAX_STUDENTS_PER_CLASS = 100;
-let jitsiApiLoader: Promise<void> | null = null;
-
-const ensureJitsiApi = () => {
-  if ((window as any).JitsiMeetExternalAPI) return Promise.resolve();
-  if (jitsiApiLoader) return jitsiApiLoader;
-
-  jitsiApiLoader = new Promise<void>((resolve, reject) => {
-    const existingScript = document.querySelector('script[data-jitsi-external-api="true"]') as HTMLScriptElement | null;
-    const handleLoad = () => resolve();
-    const handleError = () => { jitsiApiLoader = null; reject(new Error("Failed to load Jitsi API")); };
-
-    if (existingScript) {
-      if ((window as any).JitsiMeetExternalAPI) { resolve(); return; }
-      existingScript.addEventListener("load", handleLoad, { once: true });
-      existingScript.addEventListener("error", handleError, { once: true });
-      return;
-    }
-
-    const script = document.createElement("script");
-    script.src = "https://meet.jit.si/external_api.js";
-    script.async = true;
-    script.dataset.jitsiExternalApi = "true";
-    script.onload = handleLoad;
-    script.onerror = handleError;
-    document.head.appendChild(script);
-  });
-
-  return jitsiApiLoader;
-};
 
 const ElapsedTimer = ({ startTime }: { startTime: string }) => {
   const [elapsed, setElapsed] = useState("");
@@ -196,7 +168,6 @@ const LiveClasses = () => {
   };
 
   const handleLeaveClass = async () => {
-    destroyJitsi();
     setActiveRoom(null);
     setActiveClassId(null);
     setShowChat(!isMobile);
@@ -207,7 +178,6 @@ const LiveClasses = () => {
     const { error } = await supabase.from("live_classes").delete()
       .eq("id", classItem.id).eq("teacher_id", user?.id || "");
     if (error) { toast.error("Failed: " + error.message); return; }
-    destroyJitsi();
     setActiveRoom(null);
     setActiveClassId(null);
     await fetchClasses();
@@ -225,282 +195,50 @@ const LiveClasses = () => {
   const upcomingClasses = classes.filter((c) => c.status === "scheduled");
   const liveClasses = classes.filter((c) => c.status === "live");
 
-  // Jitsi External API
-  const jitsiContainerRef = useRef<HTMLDivElement>(null);
-  const jitsiApiRef = useRef<any>(null);
-  const participantSyncRef = useRef<number | null>(null);
+  // ZEGOCLOUD live streaming — managed by <LiveClass /> component.
+  // Here we only track who is the host so we can show host-only controls,
+  // and update the live `current_students` count for the listing view.
   const activeClassRef = useRef<any>(null);
-  // Track initialization to prevent re-init on fullscreen/orientation change
-  const jitsiInitializedForRef = useRef<string | null>(null);
+  const studentCountSyncRef = useRef<number | null>(null);
 
   useEffect(() => {
     activeClassRef.current = classes.find((item) => item.id === activeClassId) || null;
   }, [classes, activeClassId]);
 
-  const destroyJitsi = useCallback(() => {
-    if (participantSyncRef.current) {
-      window.clearInterval(participantSyncRef.current);
-      participantSyncRef.current = null;
-    }
-    if (jitsiApiRef.current) {
-      try { jitsiApiRef.current.dispose(); } catch {}
-      jitsiApiRef.current = null;
-    }
-    jitsiInitializedForRef.current = null;
-  }, []);
-
-  const [jitsiLoading, setJitsiLoading] = useState(false);
-  const [jitsiError, setJitsiError] = useState<string | null>(null);
-
-  // Only re-init Jitsi when activeRoom+activeClassId changes, NOT on other deps
+  // Increment / decrement current_students when host (teacher of this class)
+  // joins/leaves the active room.
   useEffect(() => {
-    if (!activeRoom || !activeClassId) return;
+    if (!activeRoom || !activeClassId || !user) return;
+    const activeClass = classes.find((item) => item.id === activeClassId);
+    if (!activeClass) return;
 
-    const resolvedActiveClass = classes.find((item) => item.id === activeClassId) || null;
+    const isHost = role === "admin" || activeClass.teacher_id === user.id;
 
-    // Wait for class data so teacher/admin don't initialize into a broken waiting state
-    if (isTeacherOrAdmin && loading) return;
-    if (isTeacherOrAdmin && !resolvedActiveClass) {
-      setJitsiError("Unable to load this live class. Please go back and join again.");
-      return;
+    // Only the joining student bumps their own presence; host clears on end.
+    if (!isHost) {
+      // Optimistically increment student count
+      supabase.from("live_classes")
+        .update({ current_students: (activeClass.current_students || 0) + 1 } as any)
+        .eq("id", activeClassId)
+        .then(() => {});
     }
-    
-    // Prevent re-init if already initialized for the same room
-    const initKey = `${activeRoom}-${activeClassId}`;
-    if (jitsiInitializedForRef.current === initKey && jitsiApiRef.current) {
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      if (!jitsiContainerRef.current) {
-        setJitsiError("Video container not ready. Try leaving and rejoining.");
-        return;
-      }
-      setJitsiLoading(true);
-      setJitsiError(null);
-
-      const loadAndInit = () => {
-        try {
-          destroyJitsi();
-          const roomName = activeRoom;
-          const displayName = profile?.full_name || user?.email || "User";
-          const activeClass = activeClassRef.current;
-          const isHost = !!activeClass && !!user && (role === "admin" || activeClass.teacher_id === user.id);
-          const isHostOrTeacher = isTeacherOrAdmin;
-
-          const teacherToolbar = [
-            'microphone', 'camera', 'toggle-camera', 'desktop', 'fullscreen',
-            'fodeviceselection', 'hangup', 'raisehand',
-            'tileview', 'videoquality', 'recording',
-            'participants-pane', 'noisesuppression', 'whiteboard',
-          ];
-          const studentToolbar = ['fullscreen'];
-
-          const options: any = {
-            roomName,
-            parentNode: jitsiContainerRef.current,
-            width: "100%",
-            height: "100%",
-            userInfo: { displayName },
-            configOverwrite: {
-              // Use anonymous guest domain to AVOID login prompts
-              hosts: {
-                domain: 'meet.jit.si',
-                anonymousdomain: 'guest.meet.jit.si',
-                muc: 'conference.meet.jit.si',
-              },
-              // Instant join — NO login, NO lobby, NO prejoin
-              prejoinConfig: { enabled: false },
-              prejoinPageEnabled: false,
-              enableLobby: false,
-              enableLobbyChat: false,
-              hideLobbyButton: true,
-              requireDisplayName: false,
-              enableWelcomePage: false,
-              disableDeepLinking: true,
-              enableClosePage: false,
-              enableInsecureRoomNameWarning: false,
-
-              // CRITICAL: Disable ALL third-party auth/login prompts
-              disableThirdPartyRequests: true,
-              enableAutomaticUrlCopy: false,
-              doNotStoreRoom: true,
-              disableInviteFunctions: true,
-              hideLoginButton: true,
-              tokenAuthUrl: null,
-              enableFeaturesBasedOnToken: false,
-              // Force anonymous mode
-              anonymousdomain: 'guest.meet.jit.si',
-              authentication: undefined,
-
-              disableInitialGUM: !isHostOrTeacher,
-              startSilent: !isHostOrTeacher,
-              startWithAudioMuted: !isHostOrTeacher,
-              startWithVideoMuted: !isHostOrTeacher,
-              startVideoMuted: !isHostOrTeacher ? 0 : undefined,
-              startAudioMuted: !isHostOrTeacher ? 0 : undefined,
-
-              disableRemoteMute: !isHostOrTeacher,
-              remoteVideoMenu: { disabled: !isHostOrTeacher },
-              disableModeratorIndicator: !isHostOrTeacher,
-
-              hideConferenceSubject: true,
-              hideConferenceTimer: !isHostOrTeacher,
-              notifications: isHostOrTeacher ? undefined : [],
-              toolbarButtons: isHostOrTeacher ? teacherToolbar : studentToolbar,
-
-              resolution: 1080,
-              constraints: {
-                video: {
-                  height: { ideal: 1080, max: 1080, min: 480 },
-                  width: { ideal: 1920, max: 1920 },
-                  frameRate: { ideal: 30, max: 30, min: 24 },
-                },
-              },
-              videoQuality: {
-                disabledCodec: '',
-                preferredCodec: 'VP9',
-                maxBitratesVideo: {
-                  low: 300000, standard: 1000000, high: 3500000, ssHigh: 3500000,
-                },
-              },
-
-              enableLayerSuspension: true,
-              channelLastN: isHostOrTeacher ? 25 : 1,
-              p2p: { enabled: false },
-              maxFullResolutionParticipants: 1,
-              adaptiveLastN: true,
-
-              disableAudioLevels: !isHostOrTeacher,
-              enableNoisyMicDetection: isHostOrTeacher,
-              enableNoAudioDetection: true,
-              enableNoiseSuppression: true,
-              stereo: false,
-              disableAP: false,
-
-              filmstrip: {
-                disableStageFilmstrip: !isHostOrTeacher,
-                maxSnippetHeight: isHostOrTeacher ? 120 : 0,
-              },
-
-              disableSelfView: !isHostOrTeacher,
-              disableSelfViewSettings: !isHostOrTeacher,
-              followMe: { enabled: isHostOrTeacher },
-            },
-            interfaceConfigOverwrite: {
-              SHOW_JITSI_WATERMARK: false,
-              SHOW_WATERMARK_FOR_GUESTS: false,
-              TOOLBAR_ALWAYS_VISIBLE: isHostOrTeacher,
-              TOOLBAR_TIMEOUT: isHostOrTeacher ? 8000 : 3000,
-              DISABLE_JOIN_LEAVE_NOTIFICATIONS: !isHostOrTeacher,
-              FILM_STRIP_MAX_HEIGHT: isHostOrTeacher ? 120 : 0,
-              VERTICAL_FILMSTRIP: false,
-              HIDE_INVITE_MORE_HEADER: true,
-              DEFAULT_BACKGROUND: '#000000',
-              OPTIMAL_BROWSERS: ['chrome', 'chromium', 'edge', 'safari'],
-              VIDEO_QUALITY_LABEL_DISABLED: !isHostOrTeacher,
-              MOBILE_APP_PROMO: false,
-              DISABLE_RINGING: true,
-              DEFAULT_REMOTE_DISPLAY_NAME: 'Student',
-              GENERATE_ROOMNAMES_ON_WELCOME_PAGE: false,
-              RECENT_LIST_ENABLED: false,
-              DISABLE_FOCUS_INDICATOR: true,
-              DISABLE_DOMINANT_SPEAKER_INDICATOR: !isHostOrTeacher,
-              DISABLE_TRANSCRIPTION_SUBTITLES: true,
-              DISABLE_VIDEO_BACKGROUND: !isHostOrTeacher,
-              INITIAL_TOOLBAR_TIMEOUT: isHostOrTeacher ? 8000 : 2000,
-              SETTINGS_SECTIONS: isHostOrTeacher
-                ? ['devices', 'language', 'moderator', 'profile']
-                : [],
-              AUTHENTICATION_ENABLE: false,
-              TOOLBAR_BUTTONS: isHostOrTeacher ? teacherToolbar : studentToolbar,
-              // Hide all login/auth UI elements
-              DISPLAY_WELCOME_FOOTER: false,
-              DISPLAY_WELCOME_PAGE_ADDITIONAL_CARD: false,
-              DISPLAY_WELCOME_PAGE_CONTENT: false,
-              DISPLAY_WELCOME_PAGE_TOOLBAR_ADDITIONAL_CONTENT: false,
-            },
-          };
-
-          jitsiApiRef.current = new (window as any).JitsiMeetExternalAPI("meet.jit.si", options);
-          jitsiInitializedForRef.current = initKey;
-          setJitsiLoading(false);
-
-          const updateCount = async () => {
-            const totalParticipants = jitsiApiRef.current?.getNumberOfParticipants?.() || 1;
-            const viewerCount = Math.max(0, totalParticipants - 1);
-
-            if (isHost && activeClassId) {
-              await supabase.from("live_classes")
-                .update({ current_students: viewerCount } as any)
-                .eq("id", activeClassId);
-            }
-          };
-
-          jitsiApiRef.current.addEventListener('videoConferenceJoined', async () => {
-            if (!isHostOrTeacher) {
-              try { jitsiApiRef.current?.executeCommand?.('toggleAudio'); } catch {}
-              try { jitsiApiRef.current?.executeCommand?.('toggleVideo'); } catch {}
-            }
-            await updateCount();
-            if (isHost && participantSyncRef.current === null) {
-              participantSyncRef.current = window.setInterval(updateCount, 10000);
-            }
-            setJitsiLoading(false);
-          });
-
-          jitsiApiRef.current.addEventListener('videoConferenceLeft', async () => {
-            if (isHost && activeClassId) {
-              supabase.from("live_classes")
-                .update({ current_students: 0 } as any)
-                .eq("id", activeClassId).then(() => {});
-            }
-            setJitsiLoading(false);
-          });
-
-          jitsiApiRef.current.addEventListener('participantJoined', (e: any) => {
-            updateCount();
-            if (isHostOrTeacher) {
-              toast(<ParticipantToast name={e.displayName || "Student"} action="joined" />, { duration: 2000 });
-            }
-          });
-
-          jitsiApiRef.current.addEventListener('participantLeft', (e: any) => {
-            updateCount();
-            if (isHostOrTeacher) {
-              toast(<ParticipantToast name={e.displayName || "Student"} action="left" />, { duration: 2000 });
-            }
-          });
-
-          if (isHostOrTeacher) {
-            jitsiApiRef.current.addEventListener('raiseHandUpdated', (e: any) => {
-              if (e.handRaised) {
-                toast(`✋ A student raised their hand!`, { duration: 4000 });
-              }
-            });
-          }
-
-          setTimeout(updateCount, 1500);
-        } catch (err: any) {
-          console.error("Jitsi init error:", err);
-          setJitsiError("Failed to load video. Please try again.");
-          setJitsiLoading(false);
-        }
-      };
-
-      ensureJitsiApi()
-        .then(loadAndInit)
-        .catch(() => {
-          setJitsiError("Failed to load video service. Check your internet connection.");
-          setJitsiLoading(false);
-        });
-    }, 100);
 
     return () => {
-      clearTimeout(timer);
-      destroyJitsi();
+      if (!isHost && activeClassId) {
+        supabase.from("live_classes")
+          .select("current_students").eq("id", activeClassId).single()
+          .then(({ data }) => {
+            const next = Math.max(0, (data?.current_students || 1) - 1);
+            supabase.from("live_classes")
+              .update({ current_students: next } as any)
+              .eq("id", activeClassId).then(() => {});
+          });
+      }
+      if (studentCountSyncRef.current) {
+        window.clearInterval(studentCountSyncRef.current);
+        studentCountSyncRef.current = null;
+      }
     };
-    // ONLY depend on activeRoom and activeClassId - NOT on profile, role, user etc
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeRoom, activeClassId]);
 
@@ -589,26 +327,12 @@ const LiveClasses = () => {
             {/* Video area */}
             <div className="flex-1 flex flex-col min-w-0 min-h-0">
               <div className="relative w-full bg-black flex-1 min-h-[240px] lg:min-h-0">
-                <div ref={jitsiContainerRef} className="absolute inset-0 w-full h-full" />
-                {(jitsiLoading || jitsiError) && (
-                  <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/80 text-white">
-                    {jitsiLoading && !jitsiError && (
-                      <>
-                        <div className="animate-spin w-10 h-10 border-4 border-primary border-t-transparent rounded-full mb-3" />
-                        <p className="text-sm">Connecting to class...</p>
-                      </>
-                    )}
-                    {jitsiError && (
-                      <>
-                        <X className="w-10 h-10 text-destructive mb-3" />
-                        <p className="text-sm text-center px-4">{jitsiError}</p>
-                        <Button variant="outline" size="sm" className="mt-3" onClick={() => { setJitsiError(null); handleLeaveClass(); }}>
-                          Go Back
-                        </Button>
-                      </>
-                    )}
-                  </div>
-                )}
+                <LiveClass
+                  roomID={activeRoom}
+                  forceHost={isTeacherOrAdmin && activeClass?.teacher_id === user?.id}
+                  onLeave={handleLeaveClass}
+                  className="absolute inset-0 w-full h-full"
+                />
                 <button onClick={toggleFullscreen}
                   className="absolute top-3 right-3 z-10 bg-black/50 hover:bg-black/70 text-white rounded-lg p-2 transition-all backdrop-blur-sm">
                   {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
