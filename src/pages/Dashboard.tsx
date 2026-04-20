@@ -37,6 +37,7 @@ const Dashboard = () => {
           tests: testsRes.count || 0,
           doubts: doubtsRes.count || 0,
           students: enrollCountRes.count || 0,
+          revenue: 0,
         });
         setMyCourses(myCoursesRes.data || []);
         setScheduledTests(schedRes.data || []);
@@ -61,7 +62,7 @@ const Dashboard = () => {
           supabase.from("test_attempts").select("id", { count: "exact", head: true }).eq("user_id", user.id),
           supabase.from("doubts").select("id", { count: "exact", head: true }),
         ]);
-        setStats({ courses: courses.count || 0, tests: tests.count || 0, doubts: doubts.count || 0, students: 0 });
+        setStats({ courses: courses.count || 0, tests: tests.count || 0, doubts: doubts.count || 0, students: 0, revenue: 0 });
       }
       setLoading(false);
     };
