@@ -14,6 +14,36 @@ export type Database = {
   }
   public: {
     Tables: {
+      attendance: {
+        Row: {
+          created_at: string
+          id: string
+          join_time: string
+          leave_time: string | null
+          room_id: string
+          student_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          join_time?: string
+          leave_time?: string | null
+          room_id: string
+          student_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          join_time?: string
+          leave_time?: string | null
+          room_id?: string
+          student_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       certificates: {
         Row: {
           certificate_number: string
@@ -815,6 +845,69 @@ export type Database = {
       }
     }
     Views: {
+      profiles_public: {
+        Row: {
+          avatar_url: string | null
+          bio: string | null
+          class_level: string | null
+          created_at: string | null
+          district: string | null
+          experience_years: number | null
+          full_name: string | null
+          is_disabled: boolean | null
+          is_free_student: boolean | null
+          is_verified: boolean | null
+          language: Database["public"]["Enums"]["app_language"] | null
+          qualification: string | null
+          school: string | null
+          state: string | null
+          subjects_taught: string | null
+          subscription_plan: string | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          avatar_url?: string | null
+          bio?: string | null
+          class_level?: string | null
+          created_at?: string | null
+          district?: string | null
+          experience_years?: number | null
+          full_name?: string | null
+          is_disabled?: boolean | null
+          is_free_student?: boolean | null
+          is_verified?: boolean | null
+          language?: Database["public"]["Enums"]["app_language"] | null
+          qualification?: string | null
+          school?: string | null
+          state?: string | null
+          subjects_taught?: string | null
+          subscription_plan?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          avatar_url?: string | null
+          bio?: string | null
+          class_level?: string | null
+          created_at?: string | null
+          district?: string | null
+          experience_years?: number | null
+          full_name?: string | null
+          is_disabled?: boolean | null
+          is_free_student?: boolean | null
+          is_verified?: boolean | null
+          language?: Database["public"]["Enums"]["app_language"] | null
+          qualification?: string | null
+          school?: string | null
+          state?: string | null
+          subjects_taught?: string | null
+          subscription_plan?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       teacher_profiles: {
         Row: {
           avatar_url: string | null
@@ -832,6 +925,7 @@ export type Database = {
       }
     }
     Functions: {
+      backfill_profile_from_auth_metadata: { Args: never; Returns: undefined }
       get_test_questions_safe: {
         Args: { _test_id: string }
         Returns: {
@@ -846,6 +940,7 @@ export type Database = {
           sort_order: number
         }[]
       }
+      get_total_revenue: { Args: never; Returns: number }
       get_user_role: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["app_role"]
@@ -862,6 +957,7 @@ export type Database = {
         Returns: boolean
       }
       promote_user_to_admin: { Args: { target_email: string }; Returns: string }
+      run_profile_backfill: { Args: never; Returns: undefined }
     }
     Enums: {
       app_language: "hindi" | "english"

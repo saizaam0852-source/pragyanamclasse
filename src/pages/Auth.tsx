@@ -94,39 +94,32 @@ const Auth = () => {
           return;
         }
 
-        const { error } = await supabase.auth.signUp({
-          email: formData.email, password: formData.password,
+        const { data: signUpData, error } = await supabase.auth.signUp({
+          email: formData.email,
+          password: formData.password,
           options: {
             data: {
               full_name: formData.fullName,
               role: formData.role,
+              phone: formData.phone,
+              parent_phone: formData.parentPhone || null,
+              school: formData.school || null,
+              class_level: isStudent ? formData.classLevel : null,
+              state: formData.state,
+              district: formData.district,
+              qualification: !isStudent ? formData.qualification : null,
+              subjects_taught: !isStudent ? formData.subjectsTaught : null,
             },
             emailRedirectTo: window.location.origin,
           },
         });
         if (error) throw error;
 
-        // Update profile with extra fields after signup
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          await supabase.from("profiles").update({
-            phone: formData.phone,
-            parent_phone: formData.parentPhone || null,
-            school: formData.school || null,
-            class_level: isStudent ? formData.classLevel : null,
-            state: formData.state,
-            district: formData.district,
-            qualification: !isStudent ? formData.qualification : null,
-            subjects_taught: !isStudent ? formData.subjectsTaught : null,
-          }).eq("user_id", user.id);
-
-          // Students see plan selection; teachers go directly
-          if (isStudent) {
-            setSignedUpUserId(user.id);
-            setShowPlanSelection(true);
-            setLoading(false);
-            return;
-          }
+        if (signUpData.user && isStudent) {
+          setSignedUpUserId(signUpData.user.id);
+          setShowPlanSelection(true);
+          setLoading(false);
+          return;
         }
 
         toast.success(t("auth.accountCreated"));

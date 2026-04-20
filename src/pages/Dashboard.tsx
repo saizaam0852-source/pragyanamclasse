@@ -12,7 +12,7 @@ const Dashboard = () => {
   const { user, role, profile } = useAuth();
   const { t, language } = useLanguage();
   const navigate = useNavigate();
-  const [stats, setStats] = useState({ courses: 0, tests: 0, doubts: 0, students: 0 });
+  const [stats, setStats] = useState({ courses: 0, tests: 0, doubts: 0, students: 0, revenue: 0 });
   const [myCourses, setMyCourses] = useState<any[]>([]);
   const [scheduledTests, setScheduledTests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -37,24 +37,32 @@ const Dashboard = () => {
           tests: testsRes.count || 0,
           doubts: doubtsRes.count || 0,
           students: enrollCountRes.count || 0,
+          revenue: 0,
         });
         setMyCourses(myCoursesRes.data || []);
         setScheduledTests(schedRes.data || []);
       } else if (role === "admin") {
-        const [courses, tests, doubts, usersCount] = await Promise.all([
+        const [courses, tests, doubts, usersCount, payments] = await Promise.all([
           supabase.from("courses").select("id", { count: "exact", head: true }),
           supabase.from("tests").select("id", { count: "exact", head: true }),
           supabase.from("doubts").select("id", { count: "exact", head: true }),
           supabase.from("profiles").select("id", { count: "exact", head: true }),
+          supabase.from("payments").select("amount").eq("status", "paid"),
         ]);
-        setStats({ courses: courses.count || 0, tests: tests.count || 0, doubts: doubts.count || 0, students: usersCount.count || 0 });
+        setStats({
+          courses: courses.count || 0,
+          tests: tests.count || 0,
+          doubts: doubts.count || 0,
+          students: usersCount.count || 0,
+          revenue: (payments.data || []).reduce((sum, payment: any) => sum + (payment.amount || 0), 0),
+        });
       } else {
         const [courses, tests, doubts] = await Promise.all([
           supabase.from("enrollments").select("id", { count: "exact", head: true }).eq("user_id", user.id),
           supabase.from("test_attempts").select("id", { count: "exact", head: true }).eq("user_id", user.id),
           supabase.from("doubts").select("id", { count: "exact", head: true }),
         ]);
-        setStats({ courses: courses.count || 0, tests: tests.count || 0, doubts: doubts.count || 0, students: 0 });
+        setStats({ courses: courses.count || 0, tests: tests.count || 0, doubts: doubts.count || 0, students: 0, revenue: 0 });
       }
       setLoading(false);
     };
@@ -196,7 +204,7 @@ const Dashboard = () => {
     { icon: Users, label: t("dash.totalUsers"), value: loading ? "—" : stats.students, color: "bg-primary/10 text-primary" },
     { icon: BookOpen, label: t("dash.totalCourses"), value: loading ? "—" : stats.courses, color: "bg-primary/10 text-primary" },
     { icon: Brain, label: t("dash.totalTests"), value: loading ? "—" : stats.tests, color: "bg-primary/10 text-primary" },
-    { icon: Award, label: t("dash.revenue"), value: "₹0", color: "bg-primary/10 text-primary" },
+    { icon: Award, label: t("dash.revenue"), value: `₹${Math.round(stats.revenue / 100).toLocaleString("en-IN")}`, color: "bg-primary/10 text-primary" },
   ];
 
   return (

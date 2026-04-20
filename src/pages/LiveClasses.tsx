@@ -195,52 +195,28 @@ const LiveClasses = () => {
   const upcomingClasses = classes.filter((c) => c.status === "scheduled");
   const liveClasses = classes.filter((c) => c.status === "live");
 
-  // ZEGOCLOUD live streaming — managed by <LiveClass /> component.
-  // Here we only track who is the host so we can show host-only controls,
-  // and update the live `current_students` count for the listing view.
   const activeClassRef = useRef<any>(null);
-  const studentCountSyncRef = useRef<number | null>(null);
 
   useEffect(() => {
     activeClassRef.current = classes.find((item) => item.id === activeClassId) || null;
   }, [classes, activeClassId]);
 
-  // Increment / decrement current_students when host (teacher of this class)
-  // joins/leaves the active room.
-  useEffect(() => {
-    if (!activeRoom || !activeClassId || !user) return;
-    const activeClass = classes.find((item) => item.id === activeClassId);
-    if (!activeClass) return;
+  const syncStudentCount = useCallback(async (classId: string, delta: number) => {
+    const { data } = await supabase.from("live_classes").select("current_students").eq("id", classId).single();
+    const next = Math.max(0, (data?.current_students || 0) + delta);
+    await supabase.from("live_classes").update({ current_students: next } as any).eq("id", classId);
+    await fetchClasses();
+  }, []);
 
-    const isHost = role === "admin" || activeClass.teacher_id === user.id;
+  const handleStudentJoin = useCallback(async () => {
+    if (!activeClassId) return;
+    await syncStudentCount(activeClassId, 1);
+  }, [activeClassId, syncStudentCount]);
 
-    // Only the joining student bumps their own presence; host clears on end.
-    if (!isHost) {
-      // Optimistically increment student count
-      supabase.from("live_classes")
-        .update({ current_students: (activeClass.current_students || 0) + 1 } as any)
-        .eq("id", activeClassId)
-        .then(() => {});
-    }
-
-    return () => {
-      if (!isHost && activeClassId) {
-        supabase.from("live_classes")
-          .select("current_students").eq("id", activeClassId).single()
-          .then(({ data }) => {
-            const next = Math.max(0, (data?.current_students || 1) - 1);
-            supabase.from("live_classes")
-              .update({ current_students: next } as any)
-              .eq("id", activeClassId).then(() => {});
-          });
-      }
-      if (studentCountSyncRef.current) {
-        window.clearInterval(studentCountSyncRef.current);
-        studentCountSyncRef.current = null;
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeRoom, activeClassId]);
+  const handleStudentLeave = useCallback(async () => {
+    if (!activeClassId) return;
+    await syncStudentCount(activeClassId, -1);
+  }, [activeClassId, syncStudentCount]);
 
   // Fullscreen
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -331,6 +307,8 @@ const LiveClasses = () => {
                   roomID={activeRoom}
                   forceHost={isTeacherOrAdmin && activeClass?.teacher_id === user?.id}
                   onLeave={handleLeaveClass}
+                  onStudentJoin={handleStudentJoin}
+                  onStudentLeave={handleStudentLeave}
                   className="absolute inset-0 w-full h-full"
                 />
                 <button onClick={toggleFullscreen}

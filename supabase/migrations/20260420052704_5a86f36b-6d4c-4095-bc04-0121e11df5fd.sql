@@ -1,0 +1,1 @@
+GRANT EXECUTE ON FUNCTION public.backfill_profile_from_auth_metadata() TO authenticated;
