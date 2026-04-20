@@ -168,7 +168,6 @@ const LiveClasses = () => {
   };
 
   const handleLeaveClass = async () => {
-    destroyJitsi();
     setActiveRoom(null);
     setActiveClassId(null);
     setShowChat(!isMobile);
@@ -179,7 +178,6 @@ const LiveClasses = () => {
     const { error } = await supabase.from("live_classes").delete()
       .eq("id", classItem.id).eq("teacher_id", user?.id || "");
     if (error) { toast.error("Failed: " + error.message); return; }
-    destroyJitsi();
     setActiveRoom(null);
     setActiveClassId(null);
     await fetchClasses();
