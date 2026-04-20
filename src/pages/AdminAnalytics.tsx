@@ -3,27 +3,32 @@ import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Users, BookOpen, Brain, TrendingUp, BarChart3, DollarSign } from "lucide-react";
 
+const formatINR = (amountInPaise: number) => `₹${Math.round(amountInPaise / 100).toLocaleString("en-IN")}`;
+
 const AdminAnalytics = () => {
   const [stats, setStats] = useState({
-    users: 0, courses: 0, tests: 0, enrollments: 0, doubts: 0
+    users: 0, courses: 0, tests: 0, enrollments: 0, doubts: 0, revenue: 0,
   });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetch = async () => {
-      const [u, c, t, e, d] = await Promise.all([
+      const [u, c, t, e, d, payments] = await Promise.all([
         supabase.from("profiles").select("id", { count: "exact", head: true }),
         supabase.from("courses").select("id", { count: "exact", head: true }),
         supabase.from("tests").select("id", { count: "exact", head: true }),
         supabase.from("enrollments").select("id", { count: "exact", head: true }),
         supabase.from("doubts").select("id", { count: "exact", head: true }),
+        supabase.from("payments").select("amount").eq("status", "paid"),
       ]);
+
       setStats({
         users: u.count || 0,
         courses: c.count || 0,
         tests: t.count || 0,
         enrollments: e.count || 0,
         doubts: d.count || 0,
+        revenue: (payments.data || []).reduce((sum, payment: any) => sum + (payment.amount || 0), 0),
       });
       setLoading(false);
     };
@@ -36,16 +41,14 @@ const AdminAnalytics = () => {
     { icon: Brain, label: "Total Tests", value: stats.tests, color: "bg-emerald/10 text-emerald" },
     { icon: TrendingUp, label: "Enrollments", value: stats.enrollments, color: "bg-saffron/10 text-saffron-dark" },
     { icon: BarChart3, label: "Doubts", value: stats.doubts, color: "bg-navy/10 text-navy dark:bg-navy-light/20 dark:text-gold-light" },
-    { icon: DollarSign, label: "Revenue", value: "₹0", color: "bg-destructive/10 text-destructive" },
+    { icon: DollarSign, label: "Revenue", value: formatINR(stats.revenue), color: "bg-destructive/10 text-destructive" },
   ];
 
   return (
     <DashboardLayout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-extrabold font-heading text-foreground">
-            Analytics
-          </h1>
+          <h1 className="text-2xl font-extrabold font-heading text-foreground">Analytics</h1>
           <p className="text-sm text-muted-foreground">Platform-wide analytics and insights</p>
         </div>
 
