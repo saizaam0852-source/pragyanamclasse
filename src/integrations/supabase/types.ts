@@ -957,6 +957,7 @@ export type Database = {
         Returns: boolean
       }
       promote_user_to_admin: { Args: { target_email: string }; Returns: string }
+      run_profile_backfill: { Args: never; Returns: undefined }
     }
     Enums: {
       app_language: "hindi" | "english"
