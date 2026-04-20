@@ -845,6 +845,69 @@ export type Database = {
       }
     }
     Views: {
+      profiles_public: {
+        Row: {
+          avatar_url: string | null
+          bio: string | null
+          class_level: string | null
+          created_at: string | null
+          district: string | null
+          experience_years: number | null
+          full_name: string | null
+          is_disabled: boolean | null
+          is_free_student: boolean | null
+          is_verified: boolean | null
+          language: Database["public"]["Enums"]["app_language"] | null
+          qualification: string | null
+          school: string | null
+          state: string | null
+          subjects_taught: string | null
+          subscription_plan: string | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          avatar_url?: string | null
+          bio?: string | null
+          class_level?: string | null
+          created_at?: string | null
+          district?: string | null
+          experience_years?: number | null
+          full_name?: string | null
+          is_disabled?: boolean | null
+          is_free_student?: boolean | null
+          is_verified?: boolean | null
+          language?: Database["public"]["Enums"]["app_language"] | null
+          qualification?: string | null
+          school?: string | null
+          state?: string | null
+          subjects_taught?: string | null
+          subscription_plan?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          avatar_url?: string | null
+          bio?: string | null
+          class_level?: string | null
+          created_at?: string | null
+          district?: string | null
+          experience_years?: number | null
+          full_name?: string | null
+          is_disabled?: boolean | null
+          is_free_student?: boolean | null
+          is_verified?: boolean | null
+          language?: Database["public"]["Enums"]["app_language"] | null
+          qualification?: string | null
+          school?: string | null
+          state?: string | null
+          subjects_taught?: string | null
+          subscription_plan?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       teacher_profiles: {
         Row: {
           avatar_url: string | null
