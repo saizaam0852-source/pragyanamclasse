@@ -266,7 +266,7 @@ const LiveClasses = () => {
 
     return (
       <DashboardLayout>
-        <div ref={videoWrapperRef} className={`${isFullscreen ? 'fixed inset-0 z-[9999]' : '-m-3 sm:-m-4 lg:-m-6'} flex flex-col h-[calc(100vh-48px)] lg:h-[calc(100vh-64px)] bg-black`}>
+        <div ref={videoWrapperRef} className={`${isFullscreen ? 'fixed inset-0 z-[9999] h-screen w-screen' : '-m-3 sm:-m-4 lg:-m-6 h-[calc(100vh-48px)] lg:h-[calc(100vh-64px)]'} flex flex-col bg-black overflow-hidden`}>
           {/* Top control bar */}
           {!isFullscreen && (
             <motion.div
