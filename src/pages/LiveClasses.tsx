@@ -196,27 +196,41 @@ const LiveClasses = () => {
   const liveClasses = classes.filter((c) => c.status === "live");
 
   const activeClassRef = useRef<any>(null);
+  const activeClassIdRef = useRef<string | null>(null);
+  const [livePeers, setLivePeers] = useState(0);
 
   useEffect(() => {
     activeClassRef.current = classes.find((item) => item.id === activeClassId) || null;
+    activeClassIdRef.current = activeClassId;
   }, [classes, activeClassId]);
 
-  const syncStudentCount = useCallback(async (classId: string, delta: number) => {
+  // Stable refs — never change, so LiveClass effect won't re-init the room.
+  const handleStudentJoin = useRef(async () => {
+    const classId = activeClassIdRef.current;
+    if (!classId) return;
     const { data } = await supabase.from("live_classes").select("current_students").eq("id", classId).single();
-    const next = Math.max(0, (data?.current_students || 0) + delta);
+    const next = Math.max(0, (data?.current_students || 0) + 1);
     await supabase.from("live_classes").update({ current_students: next } as any).eq("id", classId);
-    await fetchClasses();
-  }, []);
+  }).current;
 
-  const handleStudentJoin = useCallback(async () => {
-    if (!activeClassId) return;
-    await syncStudentCount(activeClassId, 1);
-  }, [activeClassId, syncStudentCount]);
+  const handleStudentLeave = useRef(async () => {
+    const classId = activeClassIdRef.current;
+    if (!classId) return;
+    const { data } = await supabase.from("live_classes").select("current_students").eq("id", classId).single();
+    const next = Math.max(0, (data?.current_students || 0) - 1);
+    await supabase.from("live_classes").update({ current_students: next } as any).eq("id", classId);
+  }).current;
 
-  const handleStudentLeave = useCallback(async () => {
-    if (!activeClassId) return;
-    await syncStudentCount(activeClassId, -1);
-  }, [activeClassId, syncStudentCount]);
+  const handleParticipantCount = useRef((count: number) => {
+    setLivePeers(count);
+  }).current;
+
+  const handleLeaveRoom = useRef(() => {
+    setActiveRoom(null);
+    setActiveClassId(null);
+    setShowChat(false);
+    void fetchClasses();
+  }).current;
 
   // Fullscreen
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -252,7 +266,7 @@ const LiveClasses = () => {
 
     return (
       <DashboardLayout>
-        <div ref={videoWrapperRef} className={`${isFullscreen ? 'fixed inset-0 z-[9999]' : '-m-3 sm:-m-4 lg:-m-6'} flex flex-col h-[calc(100vh-48px)] lg:h-[calc(100vh-64px)] bg-black`}>
+        <div ref={videoWrapperRef} className={`${isFullscreen ? 'fixed inset-0 z-[9999] h-screen w-screen' : '-m-3 sm:-m-4 lg:-m-6 h-[calc(100vh-48px)] lg:h-[calc(100vh-64px)]'} flex flex-col bg-black overflow-hidden`}>
           {/* Top control bar */}
           {!isFullscreen && (
             <motion.div
@@ -281,7 +295,7 @@ const LiveClasses = () => {
                 )}
                 <div className="flex items-center gap-1 bg-muted px-2 py-1 rounded-full">
                   <Users className="w-3 h-3 text-muted-foreground" />
-                  <span className="text-xs font-medium text-foreground">{studentCount}</span>
+                  <span className="text-xs font-medium text-foreground">{Math.max(livePeers, studentCount)}</span>
                   <span className="text-[10px] text-muted-foreground">/{maxStudents}</span>
                 </div>
                 <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setShowChat(!showChat)}>
@@ -306,9 +320,10 @@ const LiveClasses = () => {
                 <LiveClass
                   roomID={activeRoom}
                   forceHost={isTeacherOrAdmin && activeClass?.teacher_id === user?.id}
-                  onLeave={handleLeaveClass}
+                  onLeave={handleLeaveRoom}
                   onStudentJoin={handleStudentJoin}
                   onStudentLeave={handleStudentLeave}
+                  onParticipantCountChange={handleParticipantCount}
                   className="absolute inset-0 w-full h-full"
                 />
                 <button onClick={toggleFullscreen}
