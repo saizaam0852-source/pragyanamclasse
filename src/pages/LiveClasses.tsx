@@ -295,7 +295,7 @@ const LiveClasses = () => {
                 )}
                 <div className="flex items-center gap-1 bg-muted px-2 py-1 rounded-full">
                   <Users className="w-3 h-3 text-muted-foreground" />
-                  <span className="text-xs font-medium text-foreground">{studentCount}</span>
+                  <span className="text-xs font-medium text-foreground">{Math.max(livePeers, studentCount)}</span>
                   <span className="text-[10px] text-muted-foreground">/{maxStudents}</span>
                 </div>
                 <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setShowChat(!showChat)}>
