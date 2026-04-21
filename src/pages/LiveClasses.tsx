@@ -320,9 +320,10 @@ const LiveClasses = () => {
                 <LiveClass
                   roomID={activeRoom}
                   forceHost={isTeacherOrAdmin && activeClass?.teacher_id === user?.id}
-                  onLeave={handleLeaveClass}
+                  onLeave={handleLeaveRoom}
                   onStudentJoin={handleStudentJoin}
                   onStudentLeave={handleStudentLeave}
+                  onParticipantCountChange={handleParticipantCount}
                   className="absolute inset-0 w-full h-full"
                 />
                 <button onClick={toggleFullscreen}
