@@ -196,27 +196,41 @@ const LiveClasses = () => {
   const liveClasses = classes.filter((c) => c.status === "live");
 
   const activeClassRef = useRef<any>(null);
+  const activeClassIdRef = useRef<string | null>(null);
+  const [livePeers, setLivePeers] = useState(0);
 
   useEffect(() => {
     activeClassRef.current = classes.find((item) => item.id === activeClassId) || null;
+    activeClassIdRef.current = activeClassId;
   }, [classes, activeClassId]);
 
-  const syncStudentCount = useCallback(async (classId: string, delta: number) => {
+  // Stable refs — never change, so LiveClass effect won't re-init the room.
+  const handleStudentJoin = useRef(async () => {
+    const classId = activeClassIdRef.current;
+    if (!classId) return;
     const { data } = await supabase.from("live_classes").select("current_students").eq("id", classId).single();
-    const next = Math.max(0, (data?.current_students || 0) + delta);
+    const next = Math.max(0, (data?.current_students || 0) + 1);
     await supabase.from("live_classes").update({ current_students: next } as any).eq("id", classId);
-    await fetchClasses();
-  }, []);
+  }).current;
 
-  const handleStudentJoin = useCallback(async () => {
-    if (!activeClassId) return;
-    await syncStudentCount(activeClassId, 1);
-  }, [activeClassId, syncStudentCount]);
+  const handleStudentLeave = useRef(async () => {
+    const classId = activeClassIdRef.current;
+    if (!classId) return;
+    const { data } = await supabase.from("live_classes").select("current_students").eq("id", classId).single();
+    const next = Math.max(0, (data?.current_students || 0) - 1);
+    await supabase.from("live_classes").update({ current_students: next } as any).eq("id", classId);
+  }).current;
 
-  const handleStudentLeave = useCallback(async () => {
-    if (!activeClassId) return;
-    await syncStudentCount(activeClassId, -1);
-  }, [activeClassId, syncStudentCount]);
+  const handleParticipantCount = useRef((count: number) => {
+    setLivePeers(count);
+  }).current;
+
+  const handleLeaveRoom = useRef(() => {
+    setActiveRoom(null);
+    setActiveClassId(null);
+    setShowChat(false);
+    void fetchClasses();
+  }).current;
 
   // Fullscreen
   const [isFullscreen, setIsFullscreen] = useState(false);
