@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Check, Heart, Shield } from "lucide-react";
+import { Check, Heart, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -23,46 +23,105 @@ const PricingSection = () => {
   ];
 
   return (
-    <section id="pricing" className="py-14 sm:py-20 lg:py-28">
-      <div className="max-w-5xl mx-auto px-4 sm:px-5">
-        <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="text-center mb-8 sm:mb-14">
-          <p className="text-[11px] sm:text-[12px] font-semibold text-accent uppercase tracking-widest mb-2 sm:mb-3">{t("pricing.label")}</p>
-          <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-foreground tracking-tight mb-2 sm:mb-3">{t("pricing.title")}</h2>
-          <p className="text-[13px] sm:text-[15px] text-muted-foreground max-w-md mx-auto">{t("pricing.subtitle")}</p>
+    <section id="pricing" className="py-20 sm:py-28 relative" style={{ perspective: "1400px" }}>
+      <div className="max-w-5xl mx-auto px-5">
+        <motion.div
+          initial={{ opacity: 0, y: 30, rotateX: -15 }}
+          whileInView={{ opacity: 1, y: 0, rotateX: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+          style={{ transformStyle: "preserve-3d" }}
+          className="text-center mb-14"
+        >
+          <p className="text-[12px] font-bold text-accent uppercase tracking-[0.2em] mb-3">{t("pricing.label")}</p>
+          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-foreground tracking-tight mb-3">
+            {t("pricing.title")}
+          </h2>
+          <p className="text-[15px] text-muted-foreground max-w-md mx-auto">{t("pricing.subtitle")}</p>
         </motion.div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 max-w-3xl mx-auto">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 sm:gap-8 max-w-3xl mx-auto">
           {plans.map((plan, i) => (
-            <motion.div key={plan.name} initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.08 }}
-              className={`relative bg-background rounded-xl p-5 sm:p-7 border transition-all duration-200 ${plan.popular ? "border-accent shadow-glow sm:scale-[1.02]" : "border-border hover:shadow-card"}`}>
-              {plan.popular && (
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2 gradient-gold text-foreground text-[10px] sm:text-[11px] font-bold px-3 sm:px-4 py-1 rounded-full whitespace-nowrap">
-                  {t("pricing.mostPopular")}
+            <motion.div
+              key={plan.name}
+              initial={{ opacity: 0, y: 50, rotateY: i === 0 ? -20 : 20, scale: 0.92 }}
+              whileInView={{ opacity: 1, y: 0, rotateY: 0, scale: 1 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.8, delay: i * 0.15, ease: [0.22, 1, 0.36, 1] }}
+              whileHover={{ y: -10, rotateY: i === 0 ? 4 : -4, scale: 1.02 }}
+              style={{ transformStyle: "preserve-3d" }}
+              className="relative rounded-3xl p-7 sm:p-8"
+            >
+              <div
+                className="absolute inset-0 rounded-3xl"
+                style={{
+                  background: plan.popular ? "var(--gradient-saffron)" : "hsl(var(--card))",
+                  boxShadow: plan.popular
+                    ? "var(--shadow-glow-saffron), var(--shadow-clay-lg)"
+                    : "var(--shadow-clay)",
+                }}
+              />
+              <div className="relative">
+                {plan.popular && (
+                  <div
+                    className="absolute -top-10 left-1/2 -translate-x-1/2 text-[11px] font-bold px-3 py-1.5 rounded-full whitespace-nowrap flex items-center gap-1 text-foreground"
+                    style={{ background: "hsl(var(--card))", boxShadow: "var(--shadow-clay-sm)" }}
+                  >
+                    <Sparkles className="w-3 h-3 text-accent" />
+                    {t("pricing.mostPopular")}
+                  </div>
+                )}
+                {plan.isFree && (
+                  <div
+                    className="absolute -top-10 left-1/2 -translate-x-1/2 text-[11px] font-bold px-3 py-1.5 rounded-full whitespace-nowrap flex items-center gap-1 text-accent-foreground"
+                    style={{ background: "var(--gradient-mint)", boxShadow: "var(--shadow-glow-mint)" }}
+                  >
+                    <Heart className="w-3 h-3" /> {t("pricing.socialImpact")}
+                  </div>
+                )}
+                <h3 className={`text-[16px] font-extrabold mb-3 ${plan.popular ? "text-primary-foreground" : "text-foreground"}`}>
+                  {plan.name}
+                </h3>
+                <div className="mb-1">
+                  <span className={`text-5xl font-extrabold tracking-tight ${plan.popular ? "text-primary-foreground" : "text-foreground"}`}>
+                    {plan.price}
+                  </span>
+                  <span className={`text-[13px] ${plan.popular ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
+                    {plan.period}
+                  </span>
                 </div>
-              )}
-              {plan.isFree && (
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-emerald text-primary-foreground text-[10px] sm:text-[11px] font-semibold px-2.5 sm:px-3 py-1 rounded-full flex items-center gap-1 whitespace-nowrap">
-                  <Heart className="w-3 h-3" /> {t("pricing.socialImpact")}
-                </div>
-              )}
-              <div className="mb-3 sm:mb-5"><h3 className="text-[14px] sm:text-[16px] font-bold text-foreground">{plan.name}</h3></div>
-              <div className="mb-1">
-                <span className="text-3xl sm:text-4xl font-extrabold text-foreground tracking-tight">{plan.price}</span>
-                <span className="text-[12px] sm:text-[13px] text-muted-foreground">{plan.period}</span>
+                <p className={`text-[13px] mb-6 ${plan.popular ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
+                  {plan.desc}
+                </p>
+                <ul className="space-y-2.5 mb-7">
+                  {plan.features.map((f) => (
+                    <li
+                      key={f}
+                      className={`flex items-start gap-2 text-[13px] ${plan.popular ? "text-primary-foreground" : "text-foreground"}`}
+                    >
+                      <Check
+                        className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${plan.popular ? "text-primary-foreground" : "text-accent"}`}
+                      />
+                      {f}
+                    </li>
+                  ))}
+                </ul>
+                <Link to="/auth">
+                  <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
+                    <Button
+                      className={`w-full h-11 text-[13px] font-bold rounded-xl border-0 ${
+                        plan.popular ? "text-primary" : "text-primary-foreground"
+                      }`}
+                      style={{
+                        background: plan.popular ? "hsl(var(--card))" : "var(--gradient-indigo)",
+                        boxShadow: plan.popular ? "var(--shadow-clay-sm)" : "var(--shadow-glow-indigo)",
+                      }}
+                    >
+                      {plan.cta}
+                    </Button>
+                  </motion.div>
+                </Link>
               </div>
-              <p className="text-[11px] sm:text-[13px] text-muted-foreground mb-4 sm:mb-5">{plan.desc}</p>
-              <ul className="space-y-2 sm:space-y-2.5 mb-5 sm:mb-7">
-                {plan.features.map((f) => (
-                  <li key={f} className="flex items-start gap-1.5 sm:gap-2 text-[11px] sm:text-[13px] text-foreground">
-                    <Check className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-accent mt-0.5 shrink-0" /> {f}
-                  </li>
-                ))}
-              </ul>
-              <Link to="/auth">
-                <Button className={`w-full h-9 sm:h-10 text-[12px] sm:text-[13px] font-semibold rounded-lg ${plan.popular ? "gradient-navy text-primary-foreground hover:opacity-90" : "bg-muted text-foreground hover:bg-muted/80"}`}>
-                  {plan.cta}
-                </Button>
-              </Link>
             </motion.div>
           ))}
         </div>
