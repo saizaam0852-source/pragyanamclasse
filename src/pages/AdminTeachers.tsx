@@ -244,6 +244,12 @@ const AdminTeachers = () => {
                     {teacher.school && <div className="flex items-center gap-1.5 bg-muted/40 rounded-lg px-2 py-1"><School className="w-3 h-3 text-primary/60" /><span className="truncate">{teacher.school}</span></div>}
                     {teacher.state && <div className="flex items-center gap-1.5 bg-muted/40 rounded-lg px-2 py-1"><MapPin className="w-3 h-3 text-primary/60" />{teacher.district ? `${teacher.district}, ` : ""}{teacher.state}</div>}
                     {teacher.experience_years && <div className="flex items-center gap-1.5 bg-muted/40 rounded-lg px-2 py-1"><Clock className="w-3 h-3 text-primary/60" />{teacher.experience_years} {isHi ? "वर्ष" : "yrs exp"}</div>}
+                    {teacher.created_at && (
+                      <div className="flex items-center gap-1.5 bg-muted/40 rounded-lg px-2 py-1 col-span-2">
+                        <Calendar className="w-3 h-3 text-primary/60" />
+                        {isHi ? "शामिल हुए" : "Joined"}: {new Date(teacher.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                      </div>
+                    )}
                   </div>
 
                   {/* Mini stats */}
