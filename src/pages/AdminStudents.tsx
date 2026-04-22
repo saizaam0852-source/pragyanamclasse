@@ -248,6 +248,12 @@ const AdminStudents = () => {
                   <div className="grid grid-cols-2 gap-1.5 text-[10px] text-muted-foreground mb-3">
                     {student.school && <div className="flex items-center gap-1 bg-muted/40 rounded-lg px-2 py-1"><School className="w-3 h-3 text-primary/60" /><span className="truncate">{student.school}</span></div>}
                     {student.phone && <div className="flex items-center gap-1 bg-muted/40 rounded-lg px-2 py-1"><Phone className="w-3 h-3 text-primary/60" />{student.phone}</div>}
+                    {student.created_at && (
+                      <div className="flex items-center gap-1 bg-muted/40 rounded-lg px-2 py-1 col-span-2">
+                        <Calendar className="w-3 h-3 text-primary/60" />
+                        {isHi ? "शामिल हुए" : "Joined"}: {new Date(student.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                      </div>
+                    )}
                   </div>
 
                   {/* Mini stats */}

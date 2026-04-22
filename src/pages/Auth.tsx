@@ -38,10 +38,7 @@ const Auth = () => {
     role: "student" as const,
     phone: "", parentPhone: "", school: "",
     classLevel: "", state: "", district: "",
-    qualification: "", subjectsTaught: "",
   });
-
-  const isStudent = true;
 
   const handlePlanSelect = async (plan: "paid" | "free") => {
     if (!signedUpUserId) return;
@@ -83,7 +80,7 @@ const Auth = () => {
           setLoading(false);
           return;
         }
-        if (isStudent && (!formData.parentPhone || !formData.school || !formData.classLevel)) {
+        if (!formData.parentPhone || !formData.school || !formData.classLevel) {
           toast.error(t("auth.fillAllFields"));
           setLoading(false);
           return;
