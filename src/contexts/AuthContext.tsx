@@ -35,21 +35,28 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const fetchingRef = useRef(false);
 
   const fetchUserData = async (userId: string) => {
-    // Prevent concurrent fetches that cause race conditions
     if (fetchingRef.current) return;
     fetchingRef.current = true;
-    
+
     try {
-      const [profileRes, roleRes] = await Promise.all([
-        supabase.from("profiles").select("*").eq("user_id", userId).single(),
+      let [profileRes, roleRes] = await Promise.all([
+        supabase.from("profiles").select("*").eq("user_id", userId).maybeSingle(),
         supabase.from("user_roles").select("role").eq("user_id", userId).maybeSingle(),
       ]);
-      
-      if (profileRes.data) setProfile(profileRes.data);
+
+      if (!profileRes.data || !roleRes.data?.role) {
+        const { data: healed, error: healError } = await supabase.functions.invoke("ensure-user-account");
+        if (!healError) {
+          profileRes = { ...profileRes, data: healed?.profile ?? profileRes.data } as typeof profileRes;
+          roleRes = { ...roleRes, data: healed?.role ? { role: healed.role } : roleRes.data } as typeof roleRes;
+        }
+      }
+
+      setProfile(profileRes.data ?? null);
+
       if (roleRes.data?.role) {
         setRole(roleRes.data.role as UserRole);
       } else {
-        // Fallback to user_metadata role if no role row exists
         const { data: { user: freshUser } } = await supabase.auth.getUser();
         const metaRole = freshUser?.user_metadata?.role as UserRole;
         setRole(metaRole || "student");
