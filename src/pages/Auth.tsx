@@ -35,13 +35,13 @@ const Auth = () => {
   const [signedUpUserId, setSignedUpUserId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     email: "", password: "", fullName: "",
-    role: "student" as "student" | "teacher",
+    role: "student" as const,
     phone: "", parentPhone: "", school: "",
     classLevel: "", state: "", district: "",
     qualification: "", subjectsTaught: "",
   });
 
-  const isStudent = formData.role === "student";
+  const isStudent = true;
 
   const handlePlanSelect = async (plan: "paid" | "free") => {
     if (!signedUpUserId) return;
@@ -88,34 +88,28 @@ const Auth = () => {
           setLoading(false);
           return;
         }
-        if (!isStudent && (!formData.qualification || !formData.subjectsTaught)) {
-          toast.error(t("auth.fillAllFields"));
-          setLoading(false);
-          return;
-        }
-
         const { data: signUpData, error } = await supabase.auth.signUp({
           email: formData.email,
           password: formData.password,
           options: {
             data: {
               full_name: formData.fullName,
-              role: formData.role,
+              role: "student",
               phone: formData.phone,
               parent_phone: formData.parentPhone || null,
               school: formData.school || null,
-              class_level: isStudent ? formData.classLevel : null,
+              class_level: formData.classLevel || null,
               state: formData.state,
               district: formData.district,
-              qualification: !isStudent ? formData.qualification : null,
-              subjects_taught: !isStudent ? formData.subjectsTaught : null,
+              qualification: null,
+              subjects_taught: null,
             },
             emailRedirectTo: window.location.origin,
           },
         });
         if (error) throw error;
 
-        if (signUpData.user && isStudent) {
+        if (signUpData.user) {
           setSignedUpUserId(signUpData.user.id);
           setShowPlanSelection(true);
           setLoading(false);
@@ -176,16 +170,8 @@ const Auth = () => {
             <form onSubmit={handleSubmit} className="space-y-3.5">
               {!isLogin && (
                 <>
-                  <div>
-                    <Label className="text-[13px] text-foreground">{t("auth.iAmA")}</Label>
-                    <div className="grid grid-cols-2 gap-2 mt-1.5">
-                      {(["student", "teacher"] as const).map((r) => (
-                        <button key={r} type="button" onClick={() => setFormData({ ...formData, role: r })}
-                          className={`py-2 px-3 rounded-lg border text-[13px] font-medium transition-all ${formData.role === r ? "border-gold bg-gold/10 text-gold-warm" : "border-border text-muted-foreground hover:border-gold/30"}`}>
-                          {r === "student" ? t("auth.student") : t("auth.teacher")}
-                        </button>
-                      ))}
-                    </div>
+                  <div className="rounded-xl border border-border bg-muted/40 p-3 text-[12px] text-muted-foreground">
+                    Teacher signup has been removed. Teachers are now created only by admin.
                   </div>
 
                   <div>
@@ -198,51 +184,23 @@ const Auth = () => {
                     <Input required type="tel" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} placeholder="9876543210" className="mt-1.5 h-9 text-[13px]" />
                   </div>
 
-                  {isStudent && (
-                    <>
-                      <div>
-                        <Label className="text-[13px] text-foreground">{t("auth.parentPhone")} *</Label>
-                        <Input required type="tel" value={formData.parentPhone} onChange={(e) => setFormData({ ...formData, parentPhone: e.target.value })} placeholder="9876543210" className="mt-1.5 h-9 text-[13px]" />
-                      </div>
-                      <div>
-                        <Label className="text-[13px] text-foreground">{t("auth.school")} *</Label>
-                        <Input required value={formData.school} onChange={(e) => setFormData({ ...formData, school: e.target.value })} placeholder={t("auth.schoolPlaceholder")} className="mt-1.5 h-9 text-[13px]" />
-                      </div>
-                      <div>
-                        <Label className="text-[13px] text-foreground">{t("auth.class")} *</Label>
-                        <Select value={formData.classLevel} onValueChange={(v) => setFormData({ ...formData, classLevel: v })}>
-                          <SelectTrigger className="mt-1.5 h-9 text-[13px]"><SelectValue placeholder={t("auth.selectClass")} /></SelectTrigger>
-                          <SelectContent>
-                            {CLASS_LEVELS.map((c) => <SelectItem key={c} value={c}>{t("auth.classLabel")} {c}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </>
-                  )}
-
-                  {!isStudent && (
-                    <>
-                      <div>
-                        <Label className="text-[13px] text-foreground">{t("auth.qualification")} *</Label>
-                        <Select value={formData.qualification} onValueChange={(v) => setFormData({ ...formData, qualification: v })}>
-                          <SelectTrigger className="mt-1.5 h-9 text-[13px]"><SelectValue placeholder={t("auth.selectQualification")} /></SelectTrigger>
-                          <SelectContent>
-                            {["B.Ed", "M.Ed", "B.A", "M.A", "B.Sc", "M.Sc", "B.Tech", "M.Tech", "PhD", "D.El.Ed", "Other"].map((q) => (
-                              <SelectItem key={q} value={q}>{q}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div>
-                        <Label className="text-[13px] text-foreground">{t("auth.subjectsTaught")} *</Label>
-                        <Input required value={formData.subjectsTaught} onChange={(e) => setFormData({ ...formData, subjectsTaught: e.target.value })} placeholder={t("auth.subjectsPlaceholder")} className="mt-1.5 h-9 text-[13px]" />
-                      </div>
-                      <div>
-                        <Label className="text-[13px] text-foreground">{t("auth.school")}</Label>
-                        <Input value={formData.school} onChange={(e) => setFormData({ ...formData, school: e.target.value })} placeholder={t("auth.schoolPlaceholder")} className="mt-1.5 h-9 text-[13px]" />
-                      </div>
-                    </>
-                  )}
+                  <div>
+                    <Label className="text-[13px] text-foreground">{t("auth.parentPhone")} *</Label>
+                    <Input required type="tel" value={formData.parentPhone} onChange={(e) => setFormData({ ...formData, parentPhone: e.target.value })} placeholder="9876543210" className="mt-1.5 h-9 text-[13px]" />
+                  </div>
+                  <div>
+                    <Label className="text-[13px] text-foreground">{t("auth.school")} *</Label>
+                    <Input required value={formData.school} onChange={(e) => setFormData({ ...formData, school: e.target.value })} placeholder={t("auth.schoolPlaceholder")} className="mt-1.5 h-9 text-[13px]" />
+                  </div>
+                  <div>
+                    <Label className="text-[13px] text-foreground">{t("auth.class")} *</Label>
+                    <Select value={formData.classLevel} onValueChange={(v) => setFormData({ ...formData, classLevel: v })}>
+                      <SelectTrigger className="mt-1.5 h-9 text-[13px]"><SelectValue placeholder={t("auth.selectClass")} /></SelectTrigger>
+                      <SelectContent>
+                        {CLASS_LEVELS.map((c) => <SelectItem key={c} value={c}>{t("auth.classLabel")} {c}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
 
                   <div className="grid grid-cols-2 gap-2">
                     <div>
