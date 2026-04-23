@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useLanguage } from "@/contexts/LanguageContext";
 import DashboardLayout from "@/components/DashboardLayout";
-import { Search, CheckCircle, XCircle, GraduationCap, Phone, MapPin, School, Eye, Calendar, Ban, UserX, Shield, BookOpen, Clock, Award, Users, Trash2 } from "lucide-react";
+import { Search, CheckCircle, XCircle, GraduationCap, Phone, MapPin, School, Eye, Calendar, Ban, UserX, Shield, BookOpen, Clock, Award, Users, Trash2, UserPlus, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -32,6 +34,34 @@ const AdminTeachers = () => {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "pending" | "approved" | "disabled">("all");
   const [selectedTeacher, setSelectedTeacher] = useState<any | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [newTeacher, setNewTeacher] = useState({ email: "", password: "", full_name: "", phone: "", qualification: "", subjects_taught: "" });
+
+  const handleCreateTeacher = async () => {
+    if (!newTeacher.email || !newTeacher.password || !newTeacher.full_name) {
+      toast.error(isHi ? "नाम, ईमेल और पासवर्ड आवश्यक हैं" : "Name, email and password are required");
+      return;
+    }
+    if (newTeacher.password.length < 6) {
+      toast.error(isHi ? "पासवर्ड कम से कम 6 अक्षर का होना चाहिए" : "Password must be at least 6 characters");
+      return;
+    }
+    setCreating(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("create-teacher-account", { body: newTeacher });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+      toast.success(isHi ? "शिक्षक खाता बनाया गया" : "Teacher account created");
+      setCreateOpen(false);
+      setNewTeacher({ email: "", password: "", full_name: "", phone: "", qualification: "", subjects_taught: "" });
+      await fetchTeachers();
+    } catch (e: any) {
+      toast.error(e?.message || (isHi ? "खाता बनाने में विफल" : "Failed to create teacher"));
+    } finally {
+      setCreating(false);
+    }
+  };
 
   const fetchTeachers = async () => {
     const { data: teacherRoles } = await supabase.from("user_roles").select("user_id").eq("role", "teacher");
@@ -158,11 +188,69 @@ const AdminTeachers = () => {
             </h1>
             <p className="text-xs sm:text-sm text-muted-foreground">{isHi ? "सभी शिक्षकों को मैनेज करें" : "Manage all platform teachers"}</p>
           </div>
-          <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.2 }} className="relative w-full sm:w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input placeholder={isHi ? "नाम, फ़ोन, स्कूल..." : "Name, phone, school..."} value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 h-9 text-sm" />
+          <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.2 }} className="flex items-center gap-2 w-full sm:w-auto">
+            <div className="relative flex-1 sm:w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input placeholder={isHi ? "नाम, फ़ोन, स्कूल..." : "Name, phone, school..."} value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 h-9 text-sm" />
+            </div>
+            <Button size="sm" onClick={() => setCreateOpen(true)} className="h-9 shrink-0 gap-1.5">
+              <UserPlus className="w-4 h-4" />
+              <span className="hidden sm:inline">{isHi ? "नया शिक्षक" : "New Teacher"}</span>
+            </Button>
           </motion.div>
         </motion.div>
+
+        {/* Create Teacher Dialog */}
+        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <UserPlus className="w-5 h-5 text-primary" />
+                {isHi ? "नया शिक्षक खाता बनाएं" : "Create Teacher Account"}
+              </DialogTitle>
+              <DialogDescription>
+                {isHi ? "शिक्षक के लिए लॉगिन क्रेडेंशियल बनाएं। वे तुरंत साइन इन कर सकते हैं।" : "Create login credentials for a teacher. They can sign in immediately."}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-3 py-2">
+              <div className="grid gap-1.5">
+                <Label htmlFor="ct-name">{isHi ? "पूरा नाम *" : "Full Name *"}</Label>
+                <Input id="ct-name" value={newTeacher.full_name} onChange={(e) => setNewTeacher({ ...newTeacher, full_name: e.target.value })} placeholder="Ramesh Kumar" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="grid gap-1.5">
+                  <Label htmlFor="ct-email">{isHi ? "ईमेल *" : "Email *"}</Label>
+                  <Input id="ct-email" type="email" value={newTeacher.email} onChange={(e) => setNewTeacher({ ...newTeacher, email: e.target.value })} placeholder="teacher@example.com" />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="ct-pass">{isHi ? "पासवर्ड *" : "Password *"}</Label>
+                  <Input id="ct-pass" type="text" value={newTeacher.password} onChange={(e) => setNewTeacher({ ...newTeacher, password: e.target.value })} placeholder="min 6 chars" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="grid gap-1.5">
+                  <Label htmlFor="ct-phone">{isHi ? "फ़ोन" : "Phone"}</Label>
+                  <Input id="ct-phone" value={newTeacher.phone} onChange={(e) => setNewTeacher({ ...newTeacher, phone: e.target.value })} placeholder="+91…" />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="ct-qual">{isHi ? "योग्यता" : "Qualification"}</Label>
+                  <Input id="ct-qual" value={newTeacher.qualification} onChange={(e) => setNewTeacher({ ...newTeacher, qualification: e.target.value })} placeholder="M.Sc, B.Ed" />
+                </div>
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="ct-subj">{isHi ? "विषय" : "Subjects Taught"}</Label>
+                <Input id="ct-subj" value={newTeacher.subjects_taught} onChange={(e) => setNewTeacher({ ...newTeacher, subjects_taught: e.target.value })} placeholder="Math, Physics" />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={creating}>{isHi ? "रद्द करें" : "Cancel"}</Button>
+              <Button onClick={handleCreateTeacher} disabled={creating} className="gap-1.5">
+                {creating && <Loader2 className="w-4 h-4 animate-spin" />}
+                {isHi ? "बनाएं" : "Create"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Stats */}
         <div className="grid grid-cols-4 gap-2 sm:gap-4">
