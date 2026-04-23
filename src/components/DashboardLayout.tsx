@@ -130,14 +130,14 @@ const DashboardLayout = ({ children }: { children: React.ReactNode }) => {
       {/* Main Content */}
       <div className="flex-1 lg:ml-[220px] min-w-0">
         <header className="sticky top-0 z-30 glass border-b border-border/50">
-          <div className="flex items-center justify-between h-12 px-3 sm:px-4">
-            <button className="lg:hidden p-2 -ml-1 text-foreground rounded-lg hover:bg-muted active:scale-95 transition-transform" onClick={() => setSidebarOpen(true)}>
+          <div className="flex items-center gap-1 sm:gap-2 h-12 px-2 sm:px-4">
+            <button className="lg:hidden p-2 -ml-1 text-foreground rounded-lg hover:bg-muted active:scale-95 transition-transform shrink-0" onClick={() => setSidebarOpen(true)}>
               <Menu className="w-5 h-5" />
             </button>
-            <div className="flex-1 flex justify-center px-2">
+            <div className="flex-1 min-w-0 flex justify-center">
               <SearchBar />
             </div>
-            <div className="flex items-center gap-0.5 sm:gap-1">
+            <div className="flex items-center gap-0 sm:gap-1 shrink-0">
               <LanguageToggle />
               <ThemeToggle />
               <NotificationPanel />
