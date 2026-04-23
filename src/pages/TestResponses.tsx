@@ -206,8 +206,8 @@ const TestResponses = () => {
                 </div>
               </div>
 
-              {/* Attempts Table */}
-              <div className="bg-card rounded-2xl border border-border overflow-hidden">
+              {/* Attempts Table - desktop */}
+              <div className="hidden sm:block bg-card rounded-2xl border border-border overflow-hidden">
                 <div className="grid grid-cols-5 gap-2 px-5 py-3 bg-muted/50 text-xs font-bold text-muted-foreground">
                   <span>Student</span>
                   <span>Score</span>
@@ -229,6 +229,29 @@ const TestResponses = () => {
                     </span>
                     <Button size="sm" variant="outline" onClick={() => viewAttemptDetail(att)}>
                       <Eye className="w-3 h-3 mr-1" /> View
+                    </Button>
+                  </div>
+                ))}
+              </div>
+
+              {/* Attempts Cards - mobile */}
+              <div className="sm:hidden space-y-2.5">
+                {attempts.map((att: any) => (
+                  <div key={att.id} className="bg-card rounded-xl border border-border p-3">
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <span className="font-semibold text-sm text-foreground truncate flex-1 min-w-0">
+                        {profiles[att.user_id]?.full_name || "Student"}
+                      </span>
+                      <span className={`font-bold text-sm shrink-0 ${(att.percentage || 0) >= 60 ? "text-emerald" : "text-destructive"}`}>
+                        {att.percentage?.toFixed(0)}%
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground mb-2.5">
+                      <span>Score: <span className="text-foreground font-medium">{att.score}/{att.total_marks}</span></span>
+                      <span>{att.time_taken_seconds ? `${Math.floor(att.time_taken_seconds / 60)}m ${att.time_taken_seconds % 60}s` : "—"}</span>
+                    </div>
+                    <Button size="sm" variant="outline" className="w-full h-8 text-xs" onClick={() => viewAttemptDetail(att)}>
+                      <Eye className="w-3 h-3 mr-1" /> View Details
                     </Button>
                   </div>
                 ))}

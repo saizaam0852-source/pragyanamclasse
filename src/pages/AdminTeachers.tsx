@@ -253,7 +253,7 @@ const AdminTeachers = () => {
         </Dialog>
 
         {/* Stats */}
-        <div className="grid grid-cols-4 gap-2 sm:gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
           {[
             { key: "all" as const, count: teachers.length, label: isHi ? "कुल" : "Total", color: "text-foreground", bg: "bg-primary/5" },
             { key: "approved" as const, count: approvedCount, label: isHi ? "स्वीकृत" : "Approved", color: "text-emerald-500", bg: "bg-emerald-500/5" },
@@ -261,10 +261,10 @@ const AdminTeachers = () => {
             { key: "disabled" as const, count: disabledCount, label: isHi ? "अक्षम" : "Disabled", color: "text-destructive", bg: "bg-destructive/5" },
           ].map((s, i) => (
             <motion.div key={s.key} custom={i} variants={statVariants} initial="hidden" animate="visible"
-              className={`${s.bg} rounded-xl p-2.5 sm:p-4 border border-border text-center cursor-pointer hover:scale-105 transition-transform`}
+              className={`${s.bg} rounded-xl p-3 sm:p-4 border border-border text-center cursor-pointer hover:scale-105 transition-transform`}
               onClick={() => setFilter(s.key)}>
-              <p className={`text-lg sm:text-2xl font-extrabold ${s.color}`}>{s.count}</p>
-              <p className="text-[9px] sm:text-sm text-muted-foreground">{s.label}</p>
+              <p className={`text-xl sm:text-2xl font-extrabold ${s.color}`}>{s.count}</p>
+              <p className="text-[11px] sm:text-sm text-muted-foreground">{s.label}</p>
             </motion.div>
           ))}
         </div>
