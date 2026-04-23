@@ -34,6 +34,34 @@ const AdminTeachers = () => {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "pending" | "approved" | "disabled">("all");
   const [selectedTeacher, setSelectedTeacher] = useState<any | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [newTeacher, setNewTeacher] = useState({ email: "", password: "", full_name: "", phone: "", qualification: "", subjects_taught: "" });
+
+  const handleCreateTeacher = async () => {
+    if (!newTeacher.email || !newTeacher.password || !newTeacher.full_name) {
+      toast.error(isHi ? "नाम, ईमेल और पासवर्ड आवश्यक हैं" : "Name, email and password are required");
+      return;
+    }
+    if (newTeacher.password.length < 6) {
+      toast.error(isHi ? "पासवर्ड कम से कम 6 अक्षर का होना चाहिए" : "Password must be at least 6 characters");
+      return;
+    }
+    setCreating(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("create-teacher-account", { body: newTeacher });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+      toast.success(isHi ? "शिक्षक खाता बनाया गया" : "Teacher account created");
+      setCreateOpen(false);
+      setNewTeacher({ email: "", password: "", full_name: "", phone: "", qualification: "", subjects_taught: "" });
+      await fetchTeachers();
+    } catch (e: any) {
+      toast.error(e?.message || (isHi ? "खाता बनाने में विफल" : "Failed to create teacher"));
+    } finally {
+      setCreating(false);
+    }
+  };
 
   const fetchTeachers = async () => {
     const { data: teacherRoles } = await supabase.from("user_roles").select("user_id").eq("role", "teacher");
