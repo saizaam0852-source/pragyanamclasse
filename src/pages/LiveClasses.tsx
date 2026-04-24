@@ -552,7 +552,7 @@ const LiveClasses = () => {
                               {scheduledDate.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
                             </span>
                             <span className="flex items-center gap-1">
-                              <Users className="w-3 h-3" /> Max {c.max_students || 100}
+                              <Users className="w-3 h-3" /> Open
                             </span>
                           </div>
                           {isOwner && (
