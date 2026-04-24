@@ -125,6 +125,7 @@ const LiveClass = ({
           mode: ZegoUIKitPrebuilt.LiveStreaming,
           config: {
             role: isHost ? ZegoUIKitPrebuilt.Host : ZegoUIKitPrebuilt.Audience,
+            liveStreamingMode: "LiveStreaming" as any,
           },
         },
         showPreJoinView: false,
@@ -135,9 +136,19 @@ const LiveClass = ({
         // Force a layout that fills the container in landscape
         layout: "Auto",
         showLayoutButton: false,
+        // Host controls only for host. Audience must NOT publish streams.
         showScreenSharingButton: isHost,
         showMyMicrophoneToggleButton: isHost,
         showMyCameraToggleButton: isHost,
+        showAudioVideoSettingsButton: isHost,
+        showTurnOffRemoteCameraButton: isHost,
+        showTurnOffRemoteMicrophoneButton: isHost,
+        showRemoveUserButton: isHost,
+        // Audience: only subscribe, never publish
+        turnOnMicrophoneWhenJoining: isHost,
+        turnOnCameraWhenJoining: isHost,
+        useFrontFacingCamera: true,
+        showNonVideoUser: true,
         onJoinRoom: () => {
           // Initial count: self + remote (we'll get accurate from onUserJoin)
           setParticipantCount((c) => {
