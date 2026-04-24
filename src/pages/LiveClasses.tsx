@@ -155,11 +155,7 @@ const LiveClasses = () => {
       return;
     }
 
-    if (!isTeacherOrAdmin && freshClass.current_students >= (freshClass.max_students || MAX_STUDENTS_PER_CLASS)) {
-      toast.error(`Class is full (${freshClass.max_students || MAX_STUDENTS_PER_CLASS} students max)`);
-      setJoiningClassId(null);
-      return;
-    }
+    // No student cap — unlimited participants allowed.
 
     setActiveRoom(freshClass.room_id);
     setActiveClassId(freshClass.id);
