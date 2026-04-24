@@ -39,6 +39,9 @@ const LiveClass = ({
   const attendanceIdRef = useRef<string | null>(null);
   const joinedRef = useRef(false);
   const initStartedRef = useRef(false);
+  const retryTimeoutRef = useRef<number | null>(null);
+  const reconnectAttemptsRef = useRef(0);
+  const suppressLeaveRef = useRef(false);
   const [participantCount, setParticipantCount] = useState(0);
 
   // Keep latest callbacks in refs so the init effect doesn't depend on them
@@ -52,6 +55,8 @@ const LiveClass = ({
     // Guard against React StrictMode double-mount and parent re-renders
     if (initStartedRef.current) return;
     initStartedRef.current = true;
+    reconnectAttemptsRef.current = 0;
+    suppressLeaveRef.current = false;
 
     let cancelled = false;
     const isAdminOrTeacher = role === "admin" || role === "teacher";
@@ -59,11 +64,101 @@ const LiveClass = ({
     const isHost = !!forceHost || isAdminOrTeacher || isSuperAdmin;
     const userID = user.id;
     const userName = profile?.full_name || user.email || "User";
+    const MAX_AUDIENCE_RETRIES = 2;
+    const AUDIENCE_RECOVERY_DELAY_MS = 8000;
 
-    const init = async () => {
-      // Generate Zego kit token bound to this specific room + user.
-      // Using ZegoUIKit's built-in test token generator (appID + serverSecret + roomID + userID)
-      // — this is the documented UIKit Prebuilt flow and properly authenticates room joins.
+    const clearAudienceRetryTimer = () => {
+      if (retryTimeoutRef.current !== null) {
+        window.clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = null;
+      }
+    };
+
+    const hasPlayableRemoteVideo = () => {
+      const container = containerRef.current;
+      if (!container) return false;
+
+      const videos = Array.from(container.querySelectorAll("video")) as HTMLVideoElement[];
+      return videos.some((video) => {
+        const hasFrame = video.readyState >= 2;
+        const hasVisibleSize = (video.videoWidth || 0) > 0 || video.clientHeight > 0 || video.clientWidth > 0;
+        return hasFrame && hasVisibleSize && !video.paused;
+      });
+    };
+
+    const markAttendanceJoin = async () => {
+      if (isHost || joinedRef.current) return;
+      joinedRef.current = true;
+      const { data: existing } = await supabase
+        .from("attendance")
+        .select("id")
+        .eq("student_id", userID)
+        .eq("room_id", roomID)
+        .is("leave_time", null)
+        .order("join_time", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (existing?.id) {
+        attendanceIdRef.current = existing.id;
+      } else {
+        const { data: created } = await supabase
+          .from("attendance")
+          .insert({ student_id: userID, room_id: roomID, join_time: new Date().toISOString() } as any)
+          .select("id")
+          .single();
+        attendanceIdRef.current = created?.id ?? null;
+      }
+      await cbRef.current.onStudentJoin?.();
+    };
+
+    const markAttendanceLeave = async () => {
+      if (isHost || suppressLeaveRef.current) return;
+      if (attendanceIdRef.current) {
+        await supabase
+          .from("attendance")
+          .update({ leave_time: new Date().toISOString() } as any)
+          .eq("id", attendanceIdRef.current);
+      } else {
+        await supabase
+          .from("attendance")
+          .update({ leave_time: new Date().toISOString() } as any)
+          .eq("student_id", userID)
+          .eq("room_id", roomID)
+          .is("leave_time", null);
+      }
+      await cbRef.current.onStudentLeave?.();
+    };
+
+    const scheduleAudienceRecovery = (attempt: number) => {
+      if (isHost || cancelled) return;
+
+      clearAudienceRetryTimer();
+      retryTimeoutRef.current = window.setTimeout(() => {
+        if (cancelled || reconnectAttemptsRef.current >= MAX_AUDIENCE_RETRIES) return;
+        if (hasPlayableRemoteVideo()) return;
+
+        reconnectAttemptsRef.current = attempt + 1;
+        suppressLeaveRef.current = true;
+
+        try {
+          zpRef.current?.destroy?.();
+        } catch {}
+
+        zpRef.current = null;
+        if (containerRef.current) {
+          containerRef.current.innerHTML = "";
+        }
+
+        window.setTimeout(() => {
+          suppressLeaveRef.current = false;
+          if (!cancelled) {
+            void init(reconnectAttemptsRef.current);
+          }
+        }, 600);
+      }, AUDIENCE_RECOVERY_DELAY_MS);
+    };
+
+    const init = async (attempt = 0) => {
       const kitToken = ZegoUIKitPrebuilt.generateKitTokenForTest(
         ZEGO_APP_ID,
         ZEGO_SERVER_SECRET,
@@ -72,49 +167,6 @@ const LiveClass = ({
         userName,
       );
       if (cancelled) return;
-
-      const markAttendanceJoin = async () => {
-        if (isHost || joinedRef.current) return;
-        joinedRef.current = true;
-        const { data: existing } = await supabase
-          .from("attendance")
-          .select("id")
-          .eq("student_id", userID)
-          .eq("room_id", roomID)
-          .is("leave_time", null)
-          .order("join_time", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (existing?.id) {
-          attendanceIdRef.current = existing.id;
-        } else {
-          const { data: created } = await supabase
-            .from("attendance")
-            .insert({ student_id: userID, room_id: roomID, join_time: new Date().toISOString() } as any)
-            .select("id")
-            .single();
-          attendanceIdRef.current = created?.id ?? null;
-        }
-        await cbRef.current.onStudentJoin?.();
-      };
-
-      const markAttendanceLeave = async () => {
-        if (isHost) return;
-        if (attendanceIdRef.current) {
-          await supabase
-            .from("attendance")
-            .update({ leave_time: new Date().toISOString() } as any)
-            .eq("id", attendanceIdRef.current);
-        } else {
-          await supabase
-            .from("attendance")
-            .update({ leave_time: new Date().toISOString() } as any)
-            .eq("student_id", userID)
-            .eq("room_id", roomID)
-            .is("leave_time", null);
-        }
-        await cbRef.current.onStudentLeave?.();
-      };
 
       const zp = ZegoUIKitPrebuilt.create(kitToken);
       zpRef.current = zp;
@@ -150,15 +202,17 @@ const LiveClass = ({
         useFrontFacingCamera: true,
         showNonVideoUser: true,
         onJoinRoom: () => {
-          // Initial count: self + remote (we'll get accurate from onUserJoin)
           setParticipantCount((c) => {
             const next = Math.max(c, 1);
             cbRef.current.onParticipantCountChange?.(next);
             return next;
           });
           void markAttendanceJoin();
+          scheduleAudienceRecovery(attempt);
         },
         onLeaveRoom: () => {
+          clearAudienceRetryTimer();
+          if (suppressLeaveRef.current) return;
           void markAttendanceLeave();
           cbRef.current.onLeave?.();
         },
@@ -168,6 +222,7 @@ const LiveClass = ({
             cbRef.current.onParticipantCountChange?.(next);
             return next;
           });
+          scheduleAudienceRecovery(attempt);
         },
         onUserLeave: (users: any[]) => {
           setParticipantCount((c) => {
@@ -183,6 +238,7 @@ const LiveClass = ({
 
     return () => {
       cancelled = true;
+      clearAudienceRetryTimer();
       try {
         zpRef.current?.destroy?.();
       } catch {}
@@ -190,6 +246,7 @@ const LiveClass = ({
       attendanceIdRef.current = null;
       joinedRef.current = false;
       initStartedRef.current = false;
+      suppressLeaveRef.current = false;
     };
     // Only depend on identity values that should *actually* re-init the room.
     // Do NOT depend on callback props — they change every parent render.
