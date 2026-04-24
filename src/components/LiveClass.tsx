@@ -4,14 +4,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { ZegoUIKitPrebuilt } from "@zegocloud/zego-uikit-prebuilt";
 import { Users } from "lucide-react";
 
-// ════════════════════════════════════════════════════════════════
-// 🔑 PASTE YOUR ZEGOCLOUD CREDENTIALS HERE
-// Get them from: https://console.zegocloud.com/
-// ════════════════════════════════════════════════════════════════
-const ZEGO_APP_ID = 1303117872;
-const ZEGO_SERVER_SECRET = "1d3468cc0670f7a121559be2b7a700cd";
-// ════════════════════════════════════════════════════════════════
-
 const SUPER_ADMIN_EMAIL = "superadmin5670@gmail.com";
 
 interface LiveClassProps {
