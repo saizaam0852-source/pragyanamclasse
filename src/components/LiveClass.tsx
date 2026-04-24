@@ -170,19 +170,13 @@ const LiveClass = ({
           userName,
         );
       } else {
-        const { data, error } = await supabase.functions.invoke("get-zego-token", {
-          body: { roomID },
-        });
-
-        if (error || !data?.token || !data?.appID) {
-          throw new Error(error?.message || "Unable to initialize live class stream");
-        }
-
-        kitToken = buildKitToken(
-          Number(data.appID),
-          String(data.token),
+        // Audience: also use test token with the SAME APP_ID/SECRET as host.
+        // This guarantees host & audience are in the exact same Zego app + room.
+        kitToken = ZegoUIKitPrebuilt.generateKitTokenForTest(
+          ZEGO_APP_ID,
+          ZEGO_SERVER_SECRET,
           roomID,
-          String(data.userID || userID),
+          userID,
           userName,
         );
       }
