@@ -149,7 +149,6 @@ const LiveClass = ({
         turnOnCameraWhenJoining: isHost,
         useFrontFacingCamera: true,
         showNonVideoUser: true,
-        showOnlyOneVideo: false,
         onJoinRoom: () => {
           // Initial count: self + remote (we'll get accurate from onUserJoin)
           setParticipantCount((c) => {
