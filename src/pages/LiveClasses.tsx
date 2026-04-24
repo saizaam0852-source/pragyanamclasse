@@ -155,11 +155,7 @@ const LiveClasses = () => {
       return;
     }
 
-    if (!isTeacherOrAdmin && freshClass.current_students >= (freshClass.max_students || MAX_STUDENTS_PER_CLASS)) {
-      toast.error(`Class is full (${freshClass.max_students || MAX_STUDENTS_PER_CLASS} students max)`);
-      setJoiningClassId(null);
-      return;
-    }
+    // No student cap — unlimited participants allowed.
 
     setActiveRoom(freshClass.room_id);
     setActiveClassId(freshClass.id);
@@ -416,7 +412,7 @@ const LiveClasses = () => {
                 <div className="grid gap-3 sm:grid-cols-2">
                   {liveClasses.map((c, i) => {
                     const tch = teacherProfiles[c.teacher_id];
-                    const isFull = (c.current_students || 0) >= (c.max_students || MAX_STUDENTS_PER_CLASS);
+                    const isFull = false;
                     const isOwner = isTeacherOrAdmin && c.teacher_id === user?.id;
                     return (
                       <motion.div
@@ -443,7 +439,7 @@ const LiveClasses = () => {
                           </div>
                           <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between">
                             <span className="bg-black/70 backdrop-blur-sm text-white text-[10px] px-2 py-1 rounded-lg flex items-center gap-1.5">
-                              <Users className="w-3 h-3" /> {c.current_students || 0}/{c.max_students || 100}
+                              <Users className="w-3 h-3" /> {c.current_students || 0}
                             </span>
                             <span className="bg-black/70 backdrop-blur-sm text-white text-[10px] px-2 py-1 rounded-lg">
                               {c.duration_minutes}min
@@ -556,7 +552,7 @@ const LiveClasses = () => {
                               {scheduledDate.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
                             </span>
                             <span className="flex items-center gap-1">
-                              <Users className="w-3 h-3" /> Max {c.max_students || 100}
+                              <Users className="w-3 h-3" /> Open
                             </span>
                           </div>
                           {isOwner && (

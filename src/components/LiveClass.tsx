@@ -61,31 +61,17 @@ const LiveClass = ({
     const userName = profile?.full_name || user.email || "User";
 
     const init = async () => {
-      // 1. Fetch secure token from edge function
-      const { data, error } = await supabase.functions.invoke("get-zego-token", {
-        body: { roomID },
-      });
+      // Generate Zego kit token bound to this specific room + user.
+      // Using ZegoUIKit's built-in test token generator (appID + serverSecret + roomID + userID)
+      // — this is the documented UIKit Prebuilt flow and properly authenticates room joins.
+      const kitToken = ZegoUIKitPrebuilt.generateKitTokenForTest(
+        ZEGO_APP_ID,
+        ZEGO_SERVER_SECRET,
+        roomID,
+        userID,
+        userName,
+      );
       if (cancelled) return;
-      if (error || !data?.token || !data?.appID) {
-        console.error("[LiveClass] Token fetch failed:", error);
-        initStartedRef.current = false;
-        return;
-      }
-
-      // 2. Build kit token from server-issued token (kit token format string)
-      // ZegoUIKitPrebuilt accepts a kit token string; reuse the test helper
-      // shape by using the raw 04 token via generateKitTokenForProduction would
-      // require server SDK. We pass the server-signed token directly.
-      const kitToken = (ZegoUIKitPrebuilt as any).generateKitTokenForProduction
-        ? (ZegoUIKitPrebuilt as any).generateKitTokenForProduction(
-            Number(data.appID),
-            data.token,
-            roomID,
-            userID,
-            userName,
-          )
-        : // fallback (older SDK): build kit token manually
-          buildKitToken(Number(data.appID), data.token, roomID, userID, userName);
 
       const markAttendanceJoin = async () => {
         if (isHost || joinedRef.current) return;
