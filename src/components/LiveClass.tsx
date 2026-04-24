@@ -159,13 +159,34 @@ const LiveClass = ({
     };
 
     const init = async (attempt = 0) => {
-      const kitToken = ZegoUIKitPrebuilt.generateKitTokenForTest(
-        ZEGO_APP_ID,
-        ZEGO_SERVER_SECRET,
-        roomID,
-        userID,
-        userName,
-      );
+      let kitToken: any;
+
+      if (isHost) {
+        kitToken = ZegoUIKitPrebuilt.generateKitTokenForTest(
+          ZEGO_APP_ID,
+          ZEGO_SERVER_SECRET,
+          roomID,
+          userID,
+          userName,
+        );
+      } else {
+        const { data, error } = await supabase.functions.invoke("get-zego-token", {
+          body: { roomID },
+        });
+
+        if (error || !data?.token || !data?.appID) {
+          throw new Error(error?.message || "Unable to initialize live class stream");
+        }
+
+        kitToken = buildKitToken(
+          Number(data.appID),
+          String(data.token),
+          roomID,
+          String(data.userID || userID),
+          userName,
+        );
+      }
+
       if (cancelled) return;
 
       const zp = ZegoUIKitPrebuilt.create(kitToken);
