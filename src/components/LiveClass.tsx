@@ -159,27 +159,21 @@ const LiveClass = ({
     };
 
     const init = async (attempt = 0) => {
-      let kitToken: any;
+      const { data, error } = await supabase.functions.invoke("get-zego-token", {
+        body: { roomID },
+      });
 
-      if (isHost) {
-        kitToken = ZegoUIKitPrebuilt.generateKitTokenForTest(
-          ZEGO_APP_ID,
-          ZEGO_SERVER_SECRET,
-          roomID,
-          userID,
-          userName,
-        );
-      } else {
-        // Audience: also use test token with the SAME APP_ID/SECRET as host.
-        // This guarantees host & audience are in the exact same Zego app + room.
-        kitToken = ZegoUIKitPrebuilt.generateKitTokenForTest(
-          ZEGO_APP_ID,
-          ZEGO_SERVER_SECRET,
-          roomID,
-          userID,
-          userName,
-        );
+      if (error || !data?.token || !data?.appID) {
+        throw new Error(error?.message || "Unable to initialize live class stream");
       }
+
+      const kitToken = ZegoUIKitPrebuilt.generateKitTokenForProduction(
+        Number(data.appID),
+        String(data.token),
+        roomID,
+        String(data.userID || userID),
+        userName,
+      );
 
       if (cancelled) return;
 
@@ -192,7 +186,7 @@ const LiveClass = ({
           mode: ZegoUIKitPrebuilt.LiveStreaming,
           config: {
             role: isHost ? ZegoUIKitPrebuilt.Host : ZegoUIKitPrebuilt.Audience,
-            liveStreamingMode: "LiveStreaming" as any,
+            liveStreamingMode: ZegoUIKitPrebuilt.LiveStreamingMode.RealTimeLive,
           },
         },
         showPreJoinView: false,
@@ -287,24 +281,5 @@ const LiveClass = ({
     </div>
   );
 };
-
-// Fallback kit-token builder for older SDKs that lack
-// generateKitTokenForProduction. Uses the same payload shape internally used by
-// the prebuilt UIKit when handed a server-signed 04 token.
-function buildKitToken(
-  appID: number,
-  token: string,
-  roomID: string,
-  userID: string,
-  userName: string,
-): any {
-  return {
-    app_id: appID,
-    user_id: userID,
-    user_name: userName,
-    room_id: roomID,
-    token,
-  } as any;
-}
 
 export default LiveClass;
