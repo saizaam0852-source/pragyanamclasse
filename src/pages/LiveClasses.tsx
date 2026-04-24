@@ -412,7 +412,7 @@ const LiveClasses = () => {
                 <div className="grid gap-3 sm:grid-cols-2">
                   {liveClasses.map((c, i) => {
                     const tch = teacherProfiles[c.teacher_id];
-                    const isFull = (c.current_students || 0) >= (c.max_students || MAX_STUDENTS_PER_CLASS);
+                    const isFull = false;
                     const isOwner = isTeacherOrAdmin && c.teacher_id === user?.id;
                     return (
                       <motion.div
