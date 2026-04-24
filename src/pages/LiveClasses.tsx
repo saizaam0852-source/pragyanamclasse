@@ -11,8 +11,6 @@ import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import { useIsMobile } from "@/hooks/use-mobile";
 
-const MAX_STUDENTS_PER_CLASS = 100;
-
 const ElapsedTimer = ({ startTime }: { startTime: string }) => {
   const [elapsed, setElapsed] = useState("");
   useEffect(() => {
@@ -257,8 +255,7 @@ const LiveClasses = () => {
     const activeClass = classes.find((c) => c.id === activeClassId);
     const teacher = teacherProfiles[activeClass?.teacher_id];
     const studentCount = activeClass?.current_students || 0;
-    const maxStudents = activeClass?.max_students || 100;
-    const fillPercent = Math.min(100, Math.round((studentCount / maxStudents) * 100));
+    const liveCount = Math.max(livePeers, studentCount);
 
     return (
       <DashboardLayout>
@@ -291,8 +288,8 @@ const LiveClasses = () => {
                 )}
                 <div className="flex items-center gap-1 bg-muted px-2 py-1 rounded-full">
                   <Users className="w-3 h-3 text-muted-foreground" />
-                  <span className="text-xs font-medium text-foreground">{Math.max(livePeers, studentCount)}</span>
-                  <span className="text-[10px] text-muted-foreground">/{maxStudents}</span>
+                  <span className="text-xs font-medium text-foreground">{liveCount}</span>
+                  <span className="text-[10px] text-muted-foreground">live</span>
                 </div>
                 <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setShowChat(!showChat)}>
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

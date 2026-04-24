@@ -298,7 +298,7 @@ const CourseDetail = () => {
     const { error } = await supabase.from("live_classes").insert({
       title: liveForm.title, title_hi: liveForm.title_hi || "", course_id: courseId,
       teacher_id: user.id, scheduled_at: new Date(liveForm.scheduled_at).toISOString(),
-      duration_minutes: liveForm.duration_minutes, status: "scheduled", thumbnail_url: thumbnailUrl, max_students: 100,
+      duration_minutes: liveForm.duration_minutes, status: "scheduled", thumbnail_url: thumbnailUrl,
     } as any);
     if (error) toast.error("Failed: " + error.message);
     else {
