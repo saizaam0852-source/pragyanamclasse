@@ -27,8 +27,8 @@ function rateLimit(key: string): { ok: boolean; retryAfter?: number } {
   return { ok: true };
 }
 
-// ─── ZEGO Kit Token 04 generator (HMAC-SHA256) ───
-// Mirrors @zegocloud/zego-server-assistant generateToken04 logic.
+// ─── ZEGO Kit Token 04 generator ───
+// Mirrors the current official @zegocloud server assistant generateToken04 logic.
 async function generateZegoToken04(
   appId: number,
   userId: string,
@@ -49,48 +49,49 @@ async function generateZegoToken04(
     payload: payload || "",
   };
 
-  const plaintext = JSON.stringify(tokenInfo);
-  // ZEGOCLOUD Token04 uses AES-CBC with the full 32-character server secret
-  // as the 256-bit key. Using only the first 16 bytes creates tokens that can
-  // appear to join the room but fail to subscribe to the host stream.
-  const ivText = Math.random().toString().slice(2, 18).padEnd(16, "0");
-  const iv = new TextEncoder().encode(ivText);
+  const plainText = JSON.stringify(tokenInfo);
+  // Current Token04 uses AES-256-GCM with a 12-byte nonce and appends the
+  // encrypt-mode byte. CBC tokens can leave UIKit stuck on a black/connecting screen.
+  const nonce = crypto.getRandomValues(new Uint8Array(12));
   const keyBytes = new TextEncoder().encode(serverSecret);
   const cryptoKey = await crypto.subtle.importKey(
     "raw",
     keyBytes,
-    { name: "AES-CBC" },
+    { name: "AES-GCM" },
     false,
     ["encrypt"],
   );
-  const ptBytes = new TextEncoder().encode(plaintext);
-  const cipherBuf = await crypto.subtle.encrypt(
-    { name: "AES-CBC", iv },
+  const ptBytes = new TextEncoder().encode(plainText);
+  const encryptedBuf = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv: nonce },
     cryptoKey,
     ptBytes,
   );
-  const cipher = new Uint8Array(cipherBuf);
+  const encrypted = new Uint8Array(encryptedBuf);
 
-  // Build binary: [expire(8 BE)] [iv_len(2 BE)] [iv(16)] [cipher_len(2 BE)] [cipher]
+  // Build binary: [expire(8 BE)] [nonce_len(2 BE)] [nonce(12)] [encrypted_len(2 BE)] [encrypted] [mode=1]
   const expireBuf = new ArrayBuffer(8);
   new DataView(expireBuf).setBigInt64(0, BigInt(tokenInfo.expire), false);
   const expireBytes = new Uint8Array(expireBuf);
 
-  const ivLen = new Uint8Array(2);
-  new DataView(ivLen.buffer).setUint16(0, iv.length, false);
+  const nonceLen = new Uint8Array(2);
+  new DataView(nonceLen.buffer).setUint16(0, nonce.length, false);
 
-  const cipherLen = new Uint8Array(2);
-  new DataView(cipherLen.buffer).setUint16(0, cipher.length, false);
+  const encryptedLen = new Uint8Array(2);
+  new DataView(encryptedLen.buffer).setUint16(0, encrypted.length, false);
+
+  const mode = new Uint8Array([1]); // AesEncryptMode.GCM
 
   const total = new Uint8Array(
-    expireBytes.length + ivLen.length + iv.length + cipherLen.length + cipher.length,
+    expireBytes.length + nonceLen.length + nonce.length + encryptedLen.length + encrypted.length + mode.length,
   );
   let off = 0;
   total.set(expireBytes, off); off += expireBytes.length;
-  total.set(ivLen, off); off += ivLen.length;
-  total.set(iv, off); off += iv.length;
-  total.set(cipherLen, off); off += cipherLen.length;
-  total.set(cipher, off);
+  total.set(nonceLen, off); off += nonceLen.length;
+  total.set(nonce, off); off += nonce.length;
+  total.set(encryptedLen, off); off += encryptedLen.length;
+  total.set(encrypted, off); off += encrypted.length;
+  total.set(mode, off);
 
   // Base64 encode
   let bin = "";
