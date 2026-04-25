@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -6,12 +7,75 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+// Simple in-memory rate limiter (per user, per function instance)
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT = 10; // max requests
+const RATE_WINDOW_MS = 60_000; // per minute
+
+function checkRateLimit(userId: string): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(userId);
+  if (!entry || entry.resetAt < now) {
+    rateLimitMap.set(userId, { count: 1, resetAt: now + RATE_WINDOW_MS });
+    return true;
+  }
+  if (entry.count >= RATE_LIMIT) return false;
+  entry.count++;
+  return true;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
+    // --- Auth check ---
+    const authHeader = req.headers.get("Authorization") || "";
+    if (!authHeader.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const supabase = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // --- Role check: only teachers/admins can generate tests ---
+    const { data: roleRow } = await supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", user.id)
+      .in("role", ["teacher", "admin"])
+      .maybeSingle();
+
+    if (!roleRow) {
+      return new Response(JSON.stringify({ error: "Forbidden: teacher/admin only" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // --- Rate limit ---
+    if (!checkRateLimit(user.id)) {
+      return new Response(JSON.stringify({ error: "Rate limit exceeded. Try again in a minute." }), {
+        status: 429,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const { topic, notes, numQuestions = 10, language = "bilingual" } = await req.json();
 
     if (!topic && !notes) {
@@ -20,6 +84,9 @@ serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    // Cap numQuestions to prevent abuse
+    const safeNumQuestions = Math.min(Math.max(Number(numQuestions) || 10, 1), 50);
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) {
@@ -30,8 +97,8 @@ serve(async (req) => {
     }
 
     const prompt = topic
-      ? `Generate ${numQuestions} multiple choice questions (MCQs) about the topic: "${topic}". Each question should have 4 options (A, B, C, D) with one correct answer.`
-      : `Generate ${numQuestions} multiple choice questions (MCQs) based on these notes/content:\n\n${notes}\n\nEach question should have 4 options (A, B, C, D) with one correct answer.`;
+      ? `Generate ${safeNumQuestions} multiple choice questions (MCQs) about the topic: "${topic}". Each question should have 4 options (A, B, C, D) with one correct answer.`
+      : `Generate ${safeNumQuestions} multiple choice questions (MCQs) based on these notes/content:\n\n${notes}\n\nEach question should have 4 options (A, B, C, D) with one correct answer.`;
 
     const systemPrompt = `You are an expert Indian education content creator. Generate MCQ questions suitable for Indian students.
 ${language === "bilingual" ? "Provide questions in both English and Hindi." : ""}
@@ -89,14 +156,12 @@ Only return the JSON array, no other text.`;
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content || "";
 
-    // Parse the JSON from the response
     let questions;
     try {
-      // Try to extract JSON from potential markdown code blocks
       const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/) || [null, content];
       questions = JSON.parse(jsonMatch[1].trim());
     } catch {
-      console.error("Failed to parse AI response:", content);
+      console.error("Failed to parse AI response");
       return new Response(
         JSON.stringify({ error: "Failed to parse generated questions. Please try again." }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -109,7 +174,7 @@ Only return the JSON array, no other text.`;
   } catch (e) {
     console.error("generate-test error:", e);
     return new Response(
-      JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }),
+      JSON.stringify({ error: "Internal server error" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
