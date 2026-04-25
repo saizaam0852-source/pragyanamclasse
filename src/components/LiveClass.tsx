@@ -161,9 +161,10 @@ const LiveClass = ({
         throw new Error(error?.message || "Unable to initialize live class stream");
       }
 
+      const rtcToken = String(data.legacyToken || data.token);
       const kitToken = ZegoUIKitPrebuilt.generateKitTokenForProduction(
         Number(data.appID),
-        String(data.token),
+        rtcToken,
         roomID,
         String(data.userID || userID),
         userName,

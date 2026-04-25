@@ -27,8 +27,8 @@ function rateLimit(key: string): { ok: boolean; retryAfter?: number } {
   return { ok: true };
 }
 
-// ─── ZEGO Kit Token 04 generator (HMAC-SHA256) ───
-// Mirrors @zegocloud/zego-server-assistant generateToken04 logic.
+// ─── ZEGO Kit Token 04 generator ───
+// Mirrors the current official @zegocloud server assistant generateToken04 logic.
 async function generateZegoToken04(
   appId: number,
   userId: string,
@@ -49,48 +49,49 @@ async function generateZegoToken04(
     payload: payload || "",
   };
 
-  const plaintext = JSON.stringify(tokenInfo);
-  // ZEGOCLOUD Token04 uses AES-CBC with the full 32-character server secret
-  // as the 256-bit key. Using only the first 16 bytes creates tokens that can
-  // appear to join the room but fail to subscribe to the host stream.
-  const ivText = Math.random().toString().slice(2, 18).padEnd(16, "0");
-  const iv = new TextEncoder().encode(ivText);
+  const plainText = JSON.stringify(tokenInfo);
+  // Current Token04 uses AES-256-GCM with a 12-byte nonce and appends the
+  // encrypt-mode byte. CBC tokens can leave UIKit stuck on a black/connecting screen.
+  const nonce = crypto.getRandomValues(new Uint8Array(12));
   const keyBytes = new TextEncoder().encode(serverSecret);
   const cryptoKey = await crypto.subtle.importKey(
     "raw",
     keyBytes,
-    { name: "AES-CBC" },
+    { name: "AES-GCM" },
     false,
     ["encrypt"],
   );
-  const ptBytes = new TextEncoder().encode(plaintext);
-  const cipherBuf = await crypto.subtle.encrypt(
-    { name: "AES-CBC", iv },
+  const ptBytes = new TextEncoder().encode(plainText);
+  const encryptedBuf = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv: nonce },
     cryptoKey,
     ptBytes,
   );
-  const cipher = new Uint8Array(cipherBuf);
+  const encrypted = new Uint8Array(encryptedBuf);
 
-  // Build binary: [expire(8 BE)] [iv_len(2 BE)] [iv(16)] [cipher_len(2 BE)] [cipher]
+  // Build binary: [expire(8 BE)] [nonce_len(2 BE)] [nonce(12)] [encrypted_len(2 BE)] [encrypted] [mode=1]
   const expireBuf = new ArrayBuffer(8);
   new DataView(expireBuf).setBigInt64(0, BigInt(tokenInfo.expire), false);
   const expireBytes = new Uint8Array(expireBuf);
 
-  const ivLen = new Uint8Array(2);
-  new DataView(ivLen.buffer).setUint16(0, iv.length, false);
+  const nonceLen = new Uint8Array(2);
+  new DataView(nonceLen.buffer).setUint16(0, nonce.length, false);
 
-  const cipherLen = new Uint8Array(2);
-  new DataView(cipherLen.buffer).setUint16(0, cipher.length, false);
+  const encryptedLen = new Uint8Array(2);
+  new DataView(encryptedLen.buffer).setUint16(0, encrypted.length, false);
+
+  const mode = new Uint8Array([1]); // AesEncryptMode.GCM
 
   const total = new Uint8Array(
-    expireBytes.length + ivLen.length + iv.length + cipherLen.length + cipher.length,
+    expireBytes.length + nonceLen.length + nonce.length + encryptedLen.length + encrypted.length + mode.length,
   );
   let off = 0;
   total.set(expireBytes, off); off += expireBytes.length;
-  total.set(ivLen, off); off += ivLen.length;
-  total.set(iv, off); off += iv.length;
-  total.set(cipherLen, off); off += cipherLen.length;
-  total.set(cipher, off);
+  total.set(nonceLen, off); off += nonceLen.length;
+  total.set(nonce, off); off += nonce.length;
+  total.set(encryptedLen, off); off += encryptedLen.length;
+  total.set(encrypted, off); off += encrypted.length;
+  total.set(mode, off);
 
   // Base64 encode
   let bin = "";
@@ -98,6 +99,51 @@ async function generateZegoToken04(
   const b64 = btoa(bin);
 
   return "04" + b64;
+}
+
+// Older Web UIKit builds still generate/accept the CBC Token04 shape. Returning it
+// as a fallback prevents the live room from hanging when SDK/cloud token modes differ.
+async function generateLegacyZegoToken04(
+  appId: number,
+  userId: string,
+  serverSecret: string,
+  effectiveTimeInSeconds: number,
+  payload: string,
+): Promise<string> {
+  if (!appId || !serverSecret || serverSecret.length !== 32) {
+    throw new Error("Invalid appId or serverSecret (must be 32 chars)");
+  }
+  const createTime = Math.floor(Date.now() / 1000);
+  const tokenInfo = {
+    app_id: appId,
+    user_id: userId,
+    nonce: Math.floor(Math.random() * 2147483647),
+    ctime: createTime,
+    expire: createTime + effectiveTimeInSeconds,
+    payload: payload || "",
+  };
+
+  const ivText = Math.random().toString().slice(2, 18).padEnd(16, "0");
+  const iv = new TextEncoder().encode(ivText);
+  const keyBytes = new TextEncoder().encode(serverSecret);
+  const cryptoKey = await crypto.subtle.importKey("raw", keyBytes, { name: "AES-CBC" }, false, ["encrypt"]);
+  const cipher = new Uint8Array(await crypto.subtle.encrypt(
+    { name: "AES-CBC", iv },
+    cryptoKey,
+    new TextEncoder().encode(JSON.stringify(tokenInfo)),
+  ));
+
+  const total = new Uint8Array(28 + cipher.length);
+  total.set([0, 0, 0, 0], 0);
+  new DataView(total.buffer).setUint32(4, tokenInfo.expire, false);
+  new DataView(total.buffer).setUint16(8, iv.length, false);
+  total.set(iv, 10);
+  new DataView(total.buffer).setUint16(26, cipher.length, false);
+  total.set(cipher, 28);
+
+  let bin = "";
+  for (let i = 0; i < total.length; i++) bin += String.fromCharCode(total[i]);
+  return "04" + btoa(bin);
 }
 
 Deno.serve(async (req) => {
@@ -217,17 +263,15 @@ Deno.serve(async (req) => {
       stream_id_list: null,
     });
 
-    // Token valid for 2 hours
-    const token = await generateZegoToken04(
-      ZEGO_APP_ID,
-      user.id,
-      ZEGO_SERVER_SECRET,
-      7200,
-      payload,
-    );
+    // Tokens valid for 2 hours. The main token matches current ZEGO auth;
+    // legacyToken is for the bundled Web UIKit fallback path.
+    const [token, legacyToken] = await Promise.all([
+      generateZegoToken04(ZEGO_APP_ID, user.id, ZEGO_SERVER_SECRET, 7200, payload),
+      generateLegacyZegoToken04(ZEGO_APP_ID, user.id, ZEGO_SERVER_SECRET, 7200, payload),
+    ]);
 
     return new Response(
-      JSON.stringify({ token, appID: ZEGO_APP_ID, userID: user.id, canPublish }),
+      JSON.stringify({ token, legacyToken, appID: ZEGO_APP_ID, userID: user.id, canPublish }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (e: any) {
