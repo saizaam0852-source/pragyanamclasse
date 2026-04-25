@@ -4,7 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -50,12 +50,12 @@ async function generateZegoToken04(
   };
 
   const plaintext = JSON.stringify(tokenInfo);
-  // 16-byte IV
-  const iv = new Uint8Array(16);
-  crypto.getRandomValues(iv);
-
-  // AES-128-CBC with PKCS7 padding using first 16 bytes of secret
-  const keyBytes = new TextEncoder().encode(serverSecret).slice(0, 16);
+  // ZEGOCLOUD Token04 uses AES-CBC with the full 32-character server secret
+  // as the 256-bit key. Using only the first 16 bytes creates tokens that can
+  // appear to join the room but fail to subscribe to the host stream.
+  const ivText = Math.random().toString().slice(2, 18).padEnd(16, "0");
+  const iv = new TextEncoder().encode(ivText);
+  const keyBytes = new TextEncoder().encode(serverSecret);
   const cryptoKey = await crypto.subtle.importKey(
     "raw",
     keyBytes,
