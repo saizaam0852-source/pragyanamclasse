@@ -101,6 +101,51 @@ async function generateZegoToken04(
   return "04" + b64;
 }
 
+// Older Web UIKit builds still generate/accept the CBC Token04 shape. Returning it
+// as a fallback prevents the live room from hanging when SDK/cloud token modes differ.
+async function generateLegacyZegoToken04(
+  appId: number,
+  userId: string,
+  serverSecret: string,
+  effectiveTimeInSeconds: number,
+  payload: string,
+): Promise<string> {
+  if (!appId || !serverSecret || serverSecret.length !== 32) {
+    throw new Error("Invalid appId or serverSecret (must be 32 chars)");
+  }
+  const createTime = Math.floor(Date.now() / 1000);
+  const tokenInfo = {
+    app_id: appId,
+    user_id: userId,
+    nonce: Math.floor(Math.random() * 2147483647),
+    ctime: createTime,
+    expire: createTime + effectiveTimeInSeconds,
+    payload: payload || "",
+  };
+
+  const ivText = Math.random().toString().slice(2, 18).padEnd(16, "0");
+  const iv = new TextEncoder().encode(ivText);
+  const keyBytes = new TextEncoder().encode(serverSecret);
+  const cryptoKey = await crypto.subtle.importKey("raw", keyBytes, { name: "AES-CBC" }, false, ["encrypt"]);
+  const cipher = new Uint8Array(await crypto.subtle.encrypt(
+    { name: "AES-CBC", iv },
+    cryptoKey,
+    new TextEncoder().encode(JSON.stringify(tokenInfo)),
+  ));
+
+  const total = new Uint8Array(28 + cipher.length);
+  total.set([0, 0, 0, 0], 0);
+  new DataView(total.buffer).setUint32(4, tokenInfo.expire, false);
+  new DataView(total.buffer).setUint16(8, iv.length, false);
+  total.set(iv, 10);
+  new DataView(total.buffer).setUint16(26, cipher.length, false);
+  total.set(cipher, 28);
+
+  let bin = "";
+  for (let i = 0; i < total.length; i++) bin += String.fromCharCode(total[i]);
+  return "04" + btoa(bin);
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
