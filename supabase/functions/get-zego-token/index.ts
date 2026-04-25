@@ -263,17 +263,15 @@ Deno.serve(async (req) => {
       stream_id_list: null,
     });
 
-    // Token valid for 2 hours
-    const token = await generateZegoToken04(
-      ZEGO_APP_ID,
-      user.id,
-      ZEGO_SERVER_SECRET,
-      7200,
-      payload,
-    );
+    // Tokens valid for 2 hours. The main token matches current ZEGO auth;
+    // legacyToken is for the bundled Web UIKit fallback path.
+    const [token, legacyToken] = await Promise.all([
+      generateZegoToken04(ZEGO_APP_ID, user.id, ZEGO_SERVER_SECRET, 7200, payload),
+      generateLegacyZegoToken04(ZEGO_APP_ID, user.id, ZEGO_SERVER_SECRET, 7200, payload),
+    ]);
 
     return new Response(
-      JSON.stringify({ token, appID: ZEGO_APP_ID, userID: user.id, canPublish }),
+      JSON.stringify({ token, legacyToken, appID: ZEGO_APP_ID, userID: user.id, canPublish }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (e: any) {
