@@ -54,11 +54,26 @@ const Certificates = () => {
       day: "numeric", month: "long", year: "numeric",
     });
 
+    // SECURITY: escape all user-controlled values before injecting into HTML
+    const esc = (s: string) =>
+      String(s ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+
+    const safeTitle = esc(cert.course_title);
+    const safeTitleHi = esc(cert.course_title_hi);
+    const safeStudent = esc(studentName);
+    const safeCertNo = esc(cert.certificate_number);
+    const safeDate = esc(date);
+
     win.document.write(`
       <!DOCTYPE html>
       <html>
       <head>
-        <title>Certificate - ${cert.course_title}</title>
+        <title>Certificate - ${safeTitle}</title>
         <style>
           @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400;600&display=swap');
           * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -90,13 +105,13 @@ const Certificates = () => {
           <div class="subtitle">Excellence in Education</div>
           <div class="heading">Certificate of Completion</div>
           <p style="font-size:13px;color:#666;margin-bottom:12px;">This is to certify that</p>
-          <div class="name">${studentName}</div>
+          <div class="name">${safeStudent}</div>
           <p style="font-size:13px;color:#666;margin-bottom:8px;">has successfully completed the course</p>
-          <div class="course">${cert.course_title}</div>
-          ${cert.course_title_hi ? `<div class="course-hi">${cert.course_title_hi}</div>` : '<div style="margin-bottom:24px"></div>'}
-          <div class="details">Issued on ${date}</div>
+          <div class="course">${safeTitle}</div>
+          ${safeTitleHi ? `<div class="course-hi">${safeTitleHi}</div>` : '<div style="margin-bottom:24px"></div>'}
+          <div class="details">Issued on ${safeDate}</div>
           <div class="footer">
-            <span>Certificate No: ${cert.certificate_number}</span>
+            <span>Certificate No: ${safeCertNo}</span>
             <span>Pragyanam Education Platform</span>
           </div>
         </div>

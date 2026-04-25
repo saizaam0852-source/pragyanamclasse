@@ -57,9 +57,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (roleRes.data?.role) {
         setRole(roleRes.data.role as UserRole);
       } else {
-        const { data: { user: freshUser } } = await supabase.auth.getUser();
-        const metaRole = freshUser?.user_metadata?.role as UserRole;
-        setRole(metaRole || "student");
+        // SECURITY: never trust client-side user_metadata.role — always fall back to 'student'.
+        setRole("student");
       }
     } finally {
       fetchingRef.current = false;

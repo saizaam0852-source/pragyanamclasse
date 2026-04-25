@@ -40,7 +40,10 @@ Deno.serve(async (req) => {
     const meta = user.user_metadata || {};
     const subscriptionPlan = meta.subscription_plan === "free" ? "free" : "paid";
     const isFreeStudent = Boolean(meta.is_free_student) || subscriptionPlan === "free";
-    const desiredRole = meta.role === "admin" || meta.role === "teacher" ? meta.role : "student";
+    // SECURITY: Never trust client-supplied role metadata. Default everyone to 'student'.
+    // Teacher/admin promotion happens only via the admin-only `create-teacher-account` flow
+    // or the `promote_user_to_admin` SQL function executed by an existing admin.
+    const desiredRole = "student";
 
     const profilePayload = {
       user_id: user.id,
@@ -55,7 +58,7 @@ Deno.serve(async (req) => {
       subjects_taught: meta.subjects_taught || null,
       subscription_plan: subscriptionPlan,
       is_free_student: isFreeStudent,
-      is_verified: desiredRole === "teacher" ? false : !isFreeStudent,
+      is_verified: !isFreeStudent,
       trial_starts_at: subscriptionPlan === "paid" ? (meta.trial_starts_at || new Date().toISOString()) : null,
       trial_ends_at: subscriptionPlan === "paid"
         ? (meta.trial_ends_at || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString())
