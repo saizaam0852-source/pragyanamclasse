@@ -239,6 +239,9 @@ const LiveClass = ({
         },
         onLiveStart: () => setStatusText(""),
         onStreamUpdate: () => setStatusText(""),
+        onLocalStreamUpdated: (state: "created" | "published" | "stopped") => {
+          if (state === "published") setStatusText("");
+        },
       });
     };
 
@@ -275,6 +278,11 @@ const LiveClass = ({
   return (
     <div className={`relative w-full h-full ${className ?? ""}`}>
       <div ref={containerRef} className="absolute inset-0 w-full h-full bg-black" />
+      {statusText && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/70 text-foreground text-sm font-medium px-4 text-center">
+          {statusText}
+        </div>
+      )}
       {/* Live participant pill — overlay top-left */}
       <div className="absolute top-3 left-3 z-20 pointer-events-none flex items-center gap-1.5 bg-black/60 backdrop-blur-sm text-white text-xs font-semibold px-2.5 py-1 rounded-full">
         <Users className="w-3 h-3" />
