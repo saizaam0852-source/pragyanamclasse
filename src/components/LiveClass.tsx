@@ -34,6 +34,7 @@ const LiveClass = ({
   const retryTimeoutRef = useRef<number | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const suppressLeaveRef = useRef(false);
+  const [statusText, setStatusText] = useState("Connecting live class…");
   const [participantCount, setParticipantCount] = useState(0);
 
   // Keep latest callbacks in refs so the init effect doesn't depend on them
@@ -151,6 +152,7 @@ const LiveClass = ({
     };
 
     const init = async (attempt = 0) => {
+      setStatusText(attempt > 0 ? "Reconnecting live class…" : "Connecting live class…");
       const { data, error } = await supabase.functions.invoke("get-zego-token", {
         body: { roomID },
       });
@@ -171,13 +173,14 @@ const LiveClass = ({
 
       const zp = ZegoUIKitPrebuilt.create(kitToken);
       zpRef.current = zp;
+      const joinAsHost = isHost && data.canPublish !== false;
 
       zp.joinRoom({
         container: containerRef.current!,
         scenario: {
           mode: ZegoUIKitPrebuilt.LiveStreaming,
           config: {
-            role: isHost ? ZegoUIKitPrebuilt.Host : ZegoUIKitPrebuilt.Audience,
+            role: joinAsHost ? ZegoUIKitPrebuilt.Host : ZegoUIKitPrebuilt.Audience,
             liveStreamingMode: ZegoUIKitPrebuilt.LiveStreamingMode.RealTimeLive,
           },
         },
@@ -190,19 +193,20 @@ const LiveClass = ({
         layout: "Auto",
         showLayoutButton: false,
         // Host controls only for host. Audience must NOT publish streams.
-        showScreenSharingButton: isHost,
-        showMyMicrophoneToggleButton: isHost,
-        showMyCameraToggleButton: isHost,
-        showAudioVideoSettingsButton: isHost,
-        showTurnOffRemoteCameraButton: isHost,
-        showTurnOffRemoteMicrophoneButton: isHost,
-        showRemoveUserButton: isHost,
+        showScreenSharingButton: joinAsHost,
+        showMyMicrophoneToggleButton: joinAsHost,
+        showMyCameraToggleButton: joinAsHost,
+        showAudioVideoSettingsButton: joinAsHost,
+        showTurnOffRemoteCameraButton: joinAsHost,
+        showTurnOffRemoteMicrophoneButton: joinAsHost,
+        showRemoveUserButton: joinAsHost,
         // Audience: only subscribe, never publish
-        turnOnMicrophoneWhenJoining: isHost,
-        turnOnCameraWhenJoining: isHost,
+        turnOnMicrophoneWhenJoining: joinAsHost,
+        turnOnCameraWhenJoining: joinAsHost,
         useFrontFacingCamera: true,
         showNonVideoUser: true,
         onJoinRoom: () => {
+          setStatusText(joinAsHost ? "Starting broadcast…" : "Waiting for teacher video…");
           setParticipantCount((c) => {
             const next = Math.max(c, 1);
             cbRef.current.onParticipantCountChange?.(next);
@@ -218,6 +222,7 @@ const LiveClass = ({
           cbRef.current.onLeave?.();
         },
         onUserJoin: (users: any[]) => {
+          setStatusText("");
           setParticipantCount((c) => {
             const next = c + (users?.length || 0);
             cbRef.current.onParticipantCountChange?.(next);
@@ -232,10 +237,18 @@ const LiveClass = ({
             return next;
           });
         },
+        onLiveStart: () => setStatusText(""),
+        onStreamUpdate: () => setStatusText(""),
+        onLocalStreamUpdated: (state: "created" | "published" | "stopped") => {
+          if (state === "published") setStatusText("");
+        },
       });
     };
 
-    void init();
+    void init().catch((error) => {
+      console.error("[LiveClass] join failed", error);
+      setStatusText(error instanceof Error ? error.message : "Unable to join live class");
+    });
 
     return () => {
       cancelled = true;
@@ -248,6 +261,7 @@ const LiveClass = ({
       joinedRef.current = false;
       initStartedRef.current = false;
       suppressLeaveRef.current = false;
+      setStatusText("Connecting live class…");
     };
     // Only depend on identity values that should *actually* re-init the room.
     // Do NOT depend on callback props — they change every parent render.
@@ -264,6 +278,11 @@ const LiveClass = ({
   return (
     <div className={`relative w-full h-full ${className ?? ""}`}>
       <div ref={containerRef} className="absolute inset-0 w-full h-full bg-black" />
+      {statusText && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/70 text-foreground text-sm font-medium px-4 text-center">
+          {statusText}
+        </div>
+      )}
       {/* Live participant pill — overlay top-left */}
       <div className="absolute top-3 left-3 z-20 pointer-events-none flex items-center gap-1.5 bg-black/60 backdrop-blur-sm text-white text-xs font-semibold px-2.5 py-1 rounded-full">
         <Users className="w-3 h-3" />

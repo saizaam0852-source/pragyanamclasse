@@ -108,6 +108,7 @@ Deno.serve(async (req) => {
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const ZEGO_APP_ID = Number(Deno.env.get("ZEGO_APP_ID") || "0");
     const ZEGO_SERVER_SECRET = Deno.env.get("ZEGO_SERVER_SECRET") || "";
 
@@ -164,17 +165,69 @@ Deno.serve(async (req) => {
       });
     }
 
+    const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+      auth: { persistSession: false },
+    });
+
+    const { data: roleRows } = await adminClient
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", user.id);
+    const roles = new Set((roleRows || []).map((row: any) => row.role));
+    const isAdmin = roles.has("admin");
+    const isTeacher = roles.has("teacher");
+
+    const { data: liveClass } = await adminClient
+      .from("live_classes")
+      .select("id, teacher_id, course_id, status")
+      .eq("room_id", roomID)
+      .maybeSingle();
+
+    let canJoin = isAdmin || isTeacher;
+    let canPublish = isAdmin || (isTeacher && (!liveClass || liveClass.teacher_id === user.id));
+
+    if (!canJoin && liveClass?.status === "live") {
+      if (!liveClass.course_id) {
+        canJoin = true;
+      } else {
+        const { data: enrollment } = await adminClient
+          .from("enrollments")
+          .select("id")
+          .eq("user_id", user.id)
+          .eq("course_id", liveClass.course_id)
+          .eq("status", "active")
+          .maybeSingle();
+        canJoin = !!enrollment;
+      }
+    }
+
+    if (!canJoin) {
+      return new Response(JSON.stringify({ error: "Not allowed to join this live class" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const payload = JSON.stringify({
+      room_id: roomID,
+      privilege: {
+        1: 1, // login room
+        2: canPublish ? 1 : 0, // publish stream
+      },
+      stream_id_list: null,
+    });
+
     // Token valid for 2 hours
     const token = await generateZegoToken04(
       ZEGO_APP_ID,
       user.id,
       ZEGO_SERVER_SECRET,
       7200,
-      "",
+      payload,
     );
 
     return new Response(
-      JSON.stringify({ token, appID: ZEGO_APP_ID, userID: user.id }),
+      JSON.stringify({ token, appID: ZEGO_APP_ID, userID: user.id, canPublish }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (e: any) {
