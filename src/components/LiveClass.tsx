@@ -28,7 +28,6 @@ const LiveClass = ({
   const zegoRef = useRef<any>(null);
   const attendanceIdRef = useRef<string | null>(null);
   const attendanceTrackedRef = useRef(false);
-  const joinedRoomRef = useRef(false);
   const cleanupRef = useRef(false);
   const statusTimerRef = useRef<number | null>(null);
   const userNameRef = useRef("User");
@@ -47,7 +46,6 @@ const LiveClass = ({
     let cancelled = false;
     cleanupRef.current = false;
     attendanceTrackedRef.current = false;
-    joinedRoomRef.current = false;
     attendanceIdRef.current = null;
     setParticipantCount(0);
     setStatusText("Connecting live class…");
@@ -186,7 +184,6 @@ const LiveClass = ({
         startLiveButtonText: "Start Class",
         videoScreenConfig: { objectFit: "contain" },
         onJoinRoom: () => {
-          joinedRoomRef.current = true;
           setSafeParticipantCount(1);
           void markAttendanceJoin(Boolean(data.trackAttendance));
           clearStatusTimer();
@@ -227,8 +224,7 @@ const LiveClass = ({
       }
       if (containerRef.current) containerRef.current.innerHTML = "";
       zegoRef.current = null;
-      joinedRoomRef.current = false;
-    };
+      };
   }, [roomID, user?.id, forceHost]);
 
   if (!user) {
