@@ -31,13 +31,15 @@ const LiveClass = ({
   const joinedRoomRef = useRef(false);
   const cleanupRef = useRef(false);
   const statusTimerRef = useRef<number | null>(null);
+  const userNameRef = useRef("User");
   const cbRef = useRef({ onLeave, onStudentJoin, onStudentLeave, onParticipantCountChange });
   const [statusText, setStatusText] = useState("Connecting live class…");
   const [participantCount, setParticipantCount] = useState(0);
 
   useEffect(() => {
     cbRef.current = { onLeave, onStudentJoin, onStudentLeave, onParticipantCountChange };
-  }, [onLeave, onStudentJoin, onStudentLeave, onParticipantCountChange]);
+    userNameRef.current = profile?.full_name || user?.email || "User";
+  }, [onLeave, onStudentJoin, onStudentLeave, onParticipantCountChange, profile?.full_name, user?.email]);
 
   useEffect(() => {
     if (!user || !roomID || !containerRef.current) return;
@@ -131,7 +133,7 @@ const LiveClass = ({
 
       if (cancelled || !containerRef.current) return;
 
-      const userName = profile?.full_name || user.email || "User";
+      const userName = userNameRef.current;
       const joinAsHost = Boolean(forceHost && data.canPublish);
       const kitToken = ZegoUIKitPrebuilt.generateKitTokenForProduction(
         Number(data.appID),
@@ -227,7 +229,7 @@ const LiveClass = ({
       zegoRef.current = null;
       joinedRoomRef.current = false;
     };
-  }, [roomID, user?.id, user?.email, profile?.full_name, forceHost]);
+  }, [roomID, user?.id, forceHost]);
 
   if (!user) {
     return (
