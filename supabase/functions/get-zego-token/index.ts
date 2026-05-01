@@ -8,142 +8,120 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-// ─── Simple in-memory rate limiter (per user, per minute) ───
-// Note: edge function instances are short-lived, this is best-effort.
+const TOKEN_TTL_SECONDS = 7200;
 const RL_WINDOW_MS = 60_000;
-const RL_MAX = 30; // 30 token requests / minute / user
+const RL_MAX = 30;
 const rlMap = new Map<string, { count: number; resetAt: number }>();
+
+function jsonResponse(body: Record<string, unknown>, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
 function rateLimit(key: string): { ok: boolean; retryAfter?: number } {
   const now = Date.now();
-  const entry = rlMap.get(key);
-  if (!entry || entry.resetAt < now) {
+  const current = rlMap.get(key);
+
+  if (!current || current.resetAt <= now) {
     rlMap.set(key, { count: 1, resetAt: now + RL_WINDOW_MS });
     return { ok: true };
   }
-  if (entry.count >= RL_MAX) {
-    return { ok: false, retryAfter: Math.ceil((entry.resetAt - now) / 1000) };
+
+  if (current.count >= RL_MAX) {
+    return { ok: false, retryAfter: Math.max(1, Math.ceil((current.resetAt - now) / 1000)) };
   }
-  entry.count++;
+
+  current.count += 1;
   return { ok: true };
 }
 
-// ─── ZEGO Kit Token 04 generator ───
-// Mirrors the current official @zegocloud server assistant generateToken04 logic.
-async function generateZegoToken04(
-  appId: number,
-  userId: string,
-  serverSecret: string,
-  effectiveTimeInSeconds: number,
-  payload: string,
-): Promise<string> {
-  if (!appId || !serverSecret || serverSecret.length !== 32) {
-    throw new Error("Invalid appId or serverSecret (must be 32 chars)");
-  }
-  const createTime = Math.floor(Date.now() / 1000);
-  const tokenInfo = {
-    app_id: appId,
-    user_id: userId,
-    nonce: Math.floor(Math.random() * 2147483647) - Math.floor(Math.random() * 2147483647),
-    ctime: createTime,
-    expire: createTime + effectiveTimeInSeconds,
-    payload: payload || "",
-  };
-
-  const plainText = JSON.stringify(tokenInfo);
-  // Current Token04 uses AES-256-GCM with a 12-byte nonce and appends the
-  // encrypt-mode byte. CBC tokens can leave UIKit stuck on a black/connecting screen.
-  const nonce = crypto.getRandomValues(new Uint8Array(12));
-  const keyBytes = new TextEncoder().encode(serverSecret);
-  const cryptoKey = await crypto.subtle.importKey(
-    "raw",
-    keyBytes,
-    { name: "AES-GCM" },
-    false,
-    ["encrypt"],
-  );
-  const ptBytes = new TextEncoder().encode(plainText);
-  const encryptedBuf = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv: nonce },
-    cryptoKey,
-    ptBytes,
-  );
-  const encrypted = new Uint8Array(encryptedBuf);
-
-  // Build binary: [expire(8 BE)] [nonce_len(2 BE)] [nonce(12)] [encrypted_len(2 BE)] [encrypted] [mode=1]
-  const expireBuf = new ArrayBuffer(8);
-  new DataView(expireBuf).setBigInt64(0, BigInt(tokenInfo.expire), false);
-  const expireBytes = new Uint8Array(expireBuf);
-
-  const nonceLen = new Uint8Array(2);
-  new DataView(nonceLen.buffer).setUint16(0, nonce.length, false);
-
-  const encryptedLen = new Uint8Array(2);
-  new DataView(encryptedLen.buffer).setUint16(0, encrypted.length, false);
-
-  const mode = new Uint8Array([1]); // AesEncryptMode.GCM
-
-  const total = new Uint8Array(
-    expireBytes.length + nonceLen.length + nonce.length + encryptedLen.length + encrypted.length + mode.length,
-  );
-  let off = 0;
-  total.set(expireBytes, off); off += expireBytes.length;
-  total.set(nonceLen, off); off += nonceLen.length;
-  total.set(nonce, off); off += nonce.length;
-  total.set(encryptedLen, off); off += encryptedLen.length;
-  total.set(encrypted, off); off += encrypted.length;
-  total.set(mode, off);
-
-  // Base64 encode
-  let bin = "";
-  for (let i = 0; i < total.length; i++) bin += String.fromCharCode(total[i]);
-  const b64 = btoa(bin);
-
-  return "04" + b64;
+function normalizeZegoId(value: string, fallbackPrefix: string) {
+  const cleaned = value.replace(/[^A-Za-z0-9_]/g, "").slice(0, 64);
+  return cleaned || `${fallbackPrefix}${crypto.randomUUID().replace(/-/g, "").slice(0, 24)}`;
 }
 
-// Older Web UIKit builds still generate/accept the CBC Token04 shape. Returning it
-// as a fallback prevents the live room from hanging when SDK/cloud token modes differ.
-async function generateLegacyZegoToken04(
+function makeNonce() {
+  const bytes = crypto.getRandomValues(new Uint32Array(1))[0];
+  return (bytes % 4_294_967_296) - 2_147_483_648;
+}
+
+function bytesToBase64(bytes: Uint8Array) {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+  }
+  return btoa(binary);
+}
+
+async function generateToken04(
   appId: number,
   userId: string,
-  serverSecret: string,
+  secret: string,
   effectiveTimeInSeconds: number,
   payload: string,
-): Promise<string> {
-  if (!appId || !serverSecret || serverSecret.length !== 32) {
-    throw new Error("Invalid appId or serverSecret (must be 32 chars)");
-  }
-  const createTime = Math.floor(Date.now() / 1000);
+) {
+  const secretBytes = new TextEncoder().encode(secret);
+  if (!appId || !Number.isFinite(appId)) throw new Error("Invalid ZEGO app ID");
+  if (!userId || userId.length > 64) throw new Error("Invalid ZEGO user ID");
+  if (secretBytes.byteLength !== 32) throw new Error("ZEGO server secret must be 32 bytes");
+  if (effectiveTimeInSeconds <= 0) throw new Error("Invalid token TTL");
+
+  const now = Math.floor(Date.now() / 1000);
   const tokenInfo = {
     app_id: appId,
     user_id: userId,
-    nonce: Math.floor(Math.random() * 2147483647),
-    ctime: createTime,
-    expire: createTime + effectiveTimeInSeconds,
+    nonce: makeNonce(),
+    ctime: now,
+    expire: now + effectiveTimeInSeconds,
     payload: payload || "",
   };
 
-  const ivText = Math.random().toString().slice(2, 18).padEnd(16, "0");
-  const iv = new TextEncoder().encode(ivText);
-  const keyBytes = new TextEncoder().encode(serverSecret);
-  const cryptoKey = await crypto.subtle.importKey("raw", keyBytes, { name: "AES-CBC" }, false, ["encrypt"]);
-  const cipher = new Uint8Array(await crypto.subtle.encrypt(
-    { name: "AES-CBC", iv },
-    cryptoKey,
-    new TextEncoder().encode(JSON.stringify(tokenInfo)),
-  ));
+  const nonce = crypto.getRandomValues(new Uint8Array(12));
+  const cryptoKey = await crypto.subtle.importKey("raw", secretBytes, { name: "AES-GCM" }, false, ["encrypt"]);
+  const encrypted = new Uint8Array(
+    await crypto.subtle.encrypt(
+      { name: "AES-GCM", iv: nonce },
+      cryptoKey,
+      new TextEncoder().encode(JSON.stringify(tokenInfo)),
+    ),
+  );
 
-  const total = new Uint8Array(28 + cipher.length);
-  total.set([0, 0, 0, 0], 0);
-  new DataView(total.buffer).setUint32(4, tokenInfo.expire, false);
-  new DataView(total.buffer).setUint16(8, iv.length, false);
-  total.set(iv, 10);
-  new DataView(total.buffer).setUint16(26, cipher.length, false);
-  total.set(cipher, 28);
+  const expireBytes = new Uint8Array(8);
+  new DataView(expireBytes.buffer).setBigInt64(0, BigInt(tokenInfo.expire), false);
 
-  let bin = "";
-  for (let i = 0; i < total.length; i++) bin += String.fromCharCode(total[i]);
-  return "04" + btoa(bin);
+  const nonceLengthBytes = new Uint8Array(2);
+  new DataView(nonceLengthBytes.buffer).setUint16(0, nonce.byteLength, false);
+
+  const encryptedLengthBytes = new Uint8Array(2);
+  new DataView(encryptedLengthBytes.buffer).setUint16(0, encrypted.byteLength, false);
+
+  const modeBytes = new Uint8Array([1]);
+  const output = new Uint8Array(
+    expireBytes.byteLength +
+      nonceLengthBytes.byteLength +
+      nonce.byteLength +
+      encryptedLengthBytes.byteLength +
+      encrypted.byteLength +
+      modeBytes.byteLength,
+  );
+
+  let offset = 0;
+  output.set(expireBytes, offset);
+  offset += expireBytes.byteLength;
+  output.set(nonceLengthBytes, offset);
+  offset += nonceLengthBytes.byteLength;
+  output.set(nonce, offset);
+  offset += nonce.byteLength;
+  output.set(encryptedLengthBytes, offset);
+  offset += encryptedLengthBytes.byteLength;
+  output.set(encrypted, offset);
+  offset += encrypted.byteLength;
+  output.set(modeBytes, offset);
+
+  return `04${bytesToBase64(output)}`;
 }
 
 Deno.serve(async (req) => {
@@ -151,134 +129,151 @@ Deno.serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
+  if (req.method !== "POST") {
+    return jsonResponse({ error: "Method not allowed" }, 405);
+  }
+
   try {
-    const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-    const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
-    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+    const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
+    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const ZEGO_APP_ID = Number(Deno.env.get("ZEGO_APP_ID") || "0");
     const ZEGO_SERVER_SECRET = Deno.env.get("ZEGO_SERVER_SECRET") || "";
 
-    if (!ZEGO_APP_ID || !ZEGO_SERVER_SECRET) {
-      return new Response(
-        JSON.stringify({ error: "ZEGO credentials not configured" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_ROLE_KEY) {
+      return jsonResponse({ error: "Backend configuration missing" }, 500);
     }
 
-    // Validate JWT from Authorization header
+    if (!ZEGO_APP_ID || !ZEGO_SERVER_SECRET) {
+      return jsonResponse({ error: "Live class service is not configured" }, 500);
+    }
+
     const authHeader = req.headers.get("Authorization") || "";
     if (!authHeader.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "Missing auth" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResponse({ error: "Please sign in again" }, 401);
     }
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       global: { headers: { Authorization: authHeader } },
+      auth: { persistSession: false },
     });
 
-    const { data: { user }, error: userErr } = await supabase.auth.getUser();
-    if (userErr || !user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    if (authError || !authData.user) {
+      return jsonResponse({ error: "Please sign in again" }, 401);
     }
 
-    // Rate limit per user
-    const rl = rateLimit(user.id);
-    if (!rl.ok) {
-      return new Response(
-        JSON.stringify({ error: "Too many requests", retryAfter: rl.retryAfter }),
-        {
-          status: 429,
-          headers: {
-            ...corsHeaders,
-            "Content-Type": "application/json",
-            "Retry-After": String(rl.retryAfter || 60),
-          },
+    const user = authData.user;
+    const limited = rateLimit(user.id);
+    if (!limited.ok) {
+      return new Response(JSON.stringify({ error: "Too many token requests", retryAfter: limited.retryAfter }), {
+        status: 429,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+          "Retry-After": String(limited.retryAfter || 60),
         },
-      );
+      });
     }
 
     const body = await req.json().catch(() => ({}));
-    const roomID = String(body.roomID || "").trim();
-    if (!roomID || roomID.length > 128) {
-      return new Response(JSON.stringify({ error: "Invalid roomID" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    const requestedRoomID = String(body.roomID || "").trim();
+    if (!requestedRoomID || requestedRoomID.length > 128) {
+      return jsonResponse({ error: "Invalid live class room" }, 400);
     }
 
     const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
       auth: { persistSession: false },
     });
 
-    const { data: roleRows } = await adminClient
+    const { data: liveClass, error: classError } = await adminClient
+      .from("live_classes")
+      .select("id, room_id, teacher_id, course_id, status, title")
+      .eq("room_id", requestedRoomID)
+      .maybeSingle();
+
+    if (classError) {
+      console.error("[get-zego-token] live_classes lookup failed", classError);
+      return jsonResponse({ error: "Unable to load live class" }, 500);
+    }
+
+    if (!liveClass) {
+      return jsonResponse({ error: "Live class room not found" }, 404);
+    }
+
+    const { data: roleRows, error: roleError } = await adminClient
       .from("user_roles")
       .select("role")
       .eq("user_id", user.id);
+
+    if (roleError) {
+      console.error("[get-zego-token] user_roles lookup failed", roleError);
+      return jsonResponse({ error: "Unable to verify account role" }, 500);
+    }
+
     const roles = new Set((roleRows || []).map((row: any) => row.role));
     const isAdmin = roles.has("admin");
     const isTeacher = roles.has("teacher");
+    const isAssignedTeacher = liveClass.teacher_id === user.id;
+    const canPublish = isAdmin || (isTeacher && isAssignedTeacher);
+    let canJoin = canPublish || isAdmin || isTeacher;
+    let trackAttendance = false;
 
-    const { data: liveClass } = await adminClient
-      .from("live_classes")
-      .select("id, teacher_id, course_id, status")
-      .eq("room_id", roomID)
-      .maybeSingle();
+    if (!canJoin) {
+      if (liveClass.status !== "live") {
+        return jsonResponse({ error: "Class has not started yet" }, 403);
+      }
 
-    let canJoin = isAdmin || isTeacher;
-    let canPublish = isAdmin || (isTeacher && (!liveClass || liveClass.teacher_id === user.id));
-
-    if (!canJoin && liveClass?.status === "live") {
       if (!liveClass.course_id) {
         canJoin = true;
       } else {
-        const { data: enrollment } = await adminClient
+        const { data: enrollment, error: enrollmentError } = await adminClient
           .from("enrollments")
           .select("id")
           .eq("user_id", user.id)
           .eq("course_id", liveClass.course_id)
           .eq("status", "active")
           .maybeSingle();
+
+        if (enrollmentError) {
+          console.error("[get-zego-token] enrollment lookup failed", enrollmentError);
+          return jsonResponse({ error: "Unable to verify enrollment" }, 500);
+        }
+
         canJoin = !!enrollment;
       }
+
+      trackAttendance = canJoin;
     }
 
     if (!canJoin) {
-      return new Response(JSON.stringify({ error: "Not allowed to join this live class" }), {
-        status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResponse({ error: "You are not enrolled in this live class" }, 403);
     }
 
+    const zegoRoomID = normalizeZegoId(liveClass.room_id || liveClass.id, "room_");
+    const zegoUserID = normalizeZegoId(user.id, "user_");
     const payload = JSON.stringify({
-      room_id: roomID,
+      room_id: zegoRoomID,
       privilege: {
-        1: 1, // login room
-        2: canPublish ? 1 : 0, // publish stream
+        1: 1,
+        2: canPublish ? 1 : 0,
       },
       stream_id_list: null,
     });
+    const token = await generateToken04(ZEGO_APP_ID, zegoUserID, ZEGO_SERVER_SECRET, TOKEN_TTL_SECONDS, payload);
 
-    // Tokens valid for 2 hours. The main token matches current ZEGO auth;
-    // legacyToken is for the bundled Web UIKit fallback path.
-    const [token, legacyToken] = await Promise.all([
-      generateZegoToken04(ZEGO_APP_ID, user.id, ZEGO_SERVER_SECRET, 7200, payload),
-      generateLegacyZegoToken04(ZEGO_APP_ID, user.id, ZEGO_SERVER_SECRET, 7200, payload),
-    ]);
-
-    return new Response(
-      JSON.stringify({ token, legacyToken, appID: ZEGO_APP_ID, userID: user.id, canPublish }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
-    );
-  } catch (e: any) {
-    console.error("[get-zego-token] error:", e);
-    return new Response(
-      JSON.stringify({ error: e?.message || "Internal error" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-    );
+    return jsonResponse({
+      token,
+      appID: ZEGO_APP_ID,
+      userID: zegoUserID,
+      roomID: zegoRoomID,
+      originalRoomID: liveClass.room_id,
+      canPublish,
+      trackAttendance,
+      classStatus: liveClass.status,
+    });
+  } catch (error) {
+    console.error("[get-zego-token] error", error);
+    return jsonResponse({ error: error instanceof Error ? error.message : "Unable to join live class" }, 500);
   }
 });
