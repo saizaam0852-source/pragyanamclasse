@@ -4,8 +4,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { ZegoUIKitPrebuilt } from "@zegocloud/zego-uikit-prebuilt";
 import { Users } from "lucide-react";
 
-const SUPER_ADMIN_EMAIL = "superadmin5670@gmail.com";
-
 interface LiveClassProps {
   roomID: string;
   forceHost?: boolean;
@@ -25,87 +23,78 @@ const LiveClass = ({
   onParticipantCountChange,
   className,
 }: LiveClassProps) => {
-  const { user, role, profile } = useAuth();
+  const { user, profile } = useAuth();
   const containerRef = useRef<HTMLDivElement>(null);
-  const zpRef = useRef<any>(null);
+  const zegoRef = useRef<any>(null);
   const attendanceIdRef = useRef<string | null>(null);
-  const joinedRef = useRef(false);
-  const initStartedRef = useRef(false);
-  const retryTimeoutRef = useRef<number | null>(null);
-  const reconnectAttemptsRef = useRef(0);
-  const suppressLeaveRef = useRef(false);
+  const attendanceTrackedRef = useRef(false);
+  const joinedRoomRef = useRef(false);
+  const cleanupRef = useRef(false);
+  const statusTimerRef = useRef<number | null>(null);
+  const cbRef = useRef({ onLeave, onStudentJoin, onStudentLeave, onParticipantCountChange });
   const [statusText, setStatusText] = useState("Connecting live class…");
   const [participantCount, setParticipantCount] = useState(0);
 
-  // Keep latest callbacks in refs so the init effect doesn't depend on them
-  const cbRef = useRef({ onLeave, onStudentJoin, onStudentLeave, onParticipantCountChange });
   useEffect(() => {
     cbRef.current = { onLeave, onStudentJoin, onStudentLeave, onParticipantCountChange };
   }, [onLeave, onStudentJoin, onStudentLeave, onParticipantCountChange]);
 
   useEffect(() => {
     if (!user || !roomID || !containerRef.current) return;
-    // Guard against React StrictMode double-mount and parent re-renders
-    if (initStartedRef.current) return;
-    initStartedRef.current = true;
-    reconnectAttemptsRef.current = 0;
-    suppressLeaveRef.current = false;
 
     let cancelled = false;
-    const isAdminOrTeacher = role === "admin" || role === "teacher";
-    const isSuperAdmin = user.email?.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
-    const isHost = !!forceHost || isAdminOrTeacher || isSuperAdmin;
-    const userID = user.id;
-    const userName = profile?.full_name || user.email || "User";
-    const MAX_AUDIENCE_RETRIES = 2;
-    const AUDIENCE_RECOVERY_DELAY_MS = 8000;
+    cleanupRef.current = false;
+    attendanceTrackedRef.current = false;
+    joinedRoomRef.current = false;
+    attendanceIdRef.current = null;
+    setParticipantCount(0);
+    setStatusText("Connecting live class…");
 
-    const clearAudienceRetryTimer = () => {
-      if (retryTimeoutRef.current !== null) {
-        window.clearTimeout(retryTimeoutRef.current);
-        retryTimeoutRef.current = null;
+    const clearStatusTimer = () => {
+      if (statusTimerRef.current !== null) {
+        window.clearTimeout(statusTimerRef.current);
+        statusTimerRef.current = null;
       }
     };
 
-    const hasPlayableRemoteVideo = () => {
-      const container = containerRef.current;
-      if (!container) return false;
-
-      const videos = Array.from(container.querySelectorAll("video")) as HTMLVideoElement[];
-      return videos.some((video) => {
-        const hasFrame = video.readyState >= 2;
-        const hasVisibleSize = (video.videoWidth || 0) > 0 || video.clientHeight > 0 || video.clientWidth > 0;
-        return hasFrame && hasVisibleSize && !video.paused;
-      });
+    const updateParticipantCount = (count: number) => {
+      const next = Math.max(0, count);
+      setParticipantCount(next);
+      cbRef.current.onParticipantCountChange?.(next);
     };
 
-    const markAttendanceJoin = async () => {
-      if (isHost || joinedRef.current) return;
-      joinedRef.current = true;
+    const markAttendanceJoin = async (shouldTrack: boolean) => {
+      if (!shouldTrack || attendanceTrackedRef.current) return;
+      attendanceTrackedRef.current = true;
+
       const { data: existing } = await supabase
         .from("attendance")
         .select("id")
-        .eq("student_id", userID)
+        .eq("student_id", user.id)
         .eq("room_id", roomID)
         .is("leave_time", null)
         .order("join_time", { ascending: false })
         .limit(1)
         .maybeSingle();
+
       if (existing?.id) {
         attendanceIdRef.current = existing.id;
       } else {
         const { data: created } = await supabase
           .from("attendance")
-          .insert({ student_id: userID, room_id: roomID, join_time: new Date().toISOString() } as any)
+          .insert({ student_id: user.id, room_id: roomID, join_time: new Date().toISOString() } as any)
           .select("id")
           .single();
         attendanceIdRef.current = created?.id ?? null;
       }
+
       await cbRef.current.onStudentJoin?.();
     };
 
     const markAttendanceLeave = async () => {
-      if (isHost || suppressLeaveRef.current) return;
+      if (!attendanceTrackedRef.current) return;
+      attendanceTrackedRef.current = false;
+
       if (attendanceIdRef.current) {
         await supabase
           .from("attendance")
@@ -115,69 +104,45 @@ const LiveClass = ({
         await supabase
           .from("attendance")
           .update({ leave_time: new Date().toISOString() } as any)
-          .eq("student_id", userID)
+          .eq("student_id", user.id)
           .eq("room_id", roomID)
           .is("leave_time", null);
       }
+
+      attendanceIdRef.current = null;
       await cbRef.current.onStudentLeave?.();
     };
 
-    const scheduleAudienceRecovery = (attempt: number) => {
-      if (isHost || cancelled) return;
-
-      clearAudienceRetryTimer();
-      retryTimeoutRef.current = window.setTimeout(() => {
-        if (cancelled || reconnectAttemptsRef.current >= MAX_AUDIENCE_RETRIES) return;
-        if (hasPlayableRemoteVideo()) return;
-
-        reconnectAttemptsRef.current = attempt + 1;
-        suppressLeaveRef.current = true;
-
-        try {
-          zpRef.current?.destroy?.();
-        } catch {}
-
-        zpRef.current = null;
-        if (containerRef.current) {
-          containerRef.current.innerHTML = "";
-        }
-
-        window.setTimeout(() => {
-          suppressLeaveRef.current = false;
-          if (!cancelled) {
-            void init(reconnectAttemptsRef.current);
-          }
-        }, 600);
-      }, AUDIENCE_RECOVERY_DELAY_MS);
+    const leaveRoom = async (notifyParent: boolean) => {
+      await markAttendanceLeave();
+      if (notifyParent) cbRef.current.onLeave?.();
     };
 
-    const init = async (attempt = 0) => {
-      setStatusText(attempt > 0 ? "Reconnecting live class…" : "Connecting live class…");
+    const init = async () => {
       const { data, error } = await supabase.functions.invoke("get-zego-token", {
         body: { roomID },
       });
 
-      if (error || !data?.token || !data?.appID) {
-        throw new Error(error?.message || "Unable to initialize live class stream");
+      if (error || !data?.token || !data?.appID || !data?.roomID || !data?.userID) {
+        throw new Error((data as any)?.error || error?.message || "Unable to initialize live class");
       }
 
-      const rtcToken = String(data.legacyToken || data.token);
+      if (cancelled || !containerRef.current) return;
+
+      const userName = profile?.full_name || user.email || "User";
+      const joinAsHost = Boolean(forceHost && data.canPublish);
       const kitToken = ZegoUIKitPrebuilt.generateKitTokenForProduction(
         Number(data.appID),
-        rtcToken,
-        roomID,
-        String(data.userID || userID),
+        String(data.token),
+        String(data.roomID),
+        String(data.userID),
         userName,
       );
+      const zego = ZegoUIKitPrebuilt.create(kitToken);
+      zegoRef.current = zego;
 
-      if (cancelled) return;
-
-      const zp = ZegoUIKitPrebuilt.create(kitToken);
-      zpRef.current = zp;
-      const joinAsHost = isHost && data.canPublish !== false;
-
-      zp.joinRoom({
-        container: containerRef.current!,
+      zego.joinRoom({
+        container: containerRef.current,
         scenario: {
           mode: ZegoUIKitPrebuilt.LiveStreaming,
           config: {
@@ -189,11 +154,12 @@ const LiveClass = ({
         showUserList: false,
         showTextChat: false,
         showRoomDetailsButton: false,
+        showRoomTimer: false,
         sharedLinks: [],
-        // Force a layout that fills the container in landscape
         layout: "Auto",
         showLayoutButton: false,
-        // Host controls only for host. Audience must NOT publish streams.
+        showPinButton: false,
+        showMoreButton: false,
         showScreenSharingButton: joinAsHost,
         showMyMicrophoneToggleButton: joinAsHost,
         showMyCameraToggleButton: joinAsHost,
@@ -201,42 +167,36 @@ const LiveClass = ({
         showTurnOffRemoteCameraButton: joinAsHost,
         showTurnOffRemoteMicrophoneButton: joinAsHost,
         showRemoveUserButton: joinAsHost,
-        // Audience: only subscribe, never publish
+        showInviteToCohostButton: false,
+        showRemoveCohostButton: false,
+        showRequestToCohostButton: false,
         turnOnMicrophoneWhenJoining: joinAsHost,
         turnOnCameraWhenJoining: joinAsHost,
         useFrontFacingCamera: true,
         showNonVideoUser: true,
+        showOnlyAudioUser: true,
+        showLeavingView: false,
+        showLeaveRoomConfirmDialog: false,
+        lowerLeftNotification: { showUserJoinAndLeave: true, showTextChat: false },
+        liveNotStartedTextForAudience: "Waiting for teacher to start the class…",
+        startLiveButtonText: "Start Class",
+        videoScreenConfig: { objectFit: "contain" },
         onJoinRoom: () => {
-          setStatusText(joinAsHost ? "Starting broadcast…" : "Waiting for teacher video…");
-          setParticipantCount((c) => {
-            const next = Math.max(c, 1);
-            cbRef.current.onParticipantCountChange?.(next);
-            return next;
-          });
-          void markAttendanceJoin();
-          scheduleAudienceRecovery(attempt);
+          joinedRoomRef.current = true;
+          updateParticipantCount(1);
+          void markAttendanceJoin(Boolean(data.trackAttendance));
+          clearStatusTimer();
+          statusTimerRef.current = window.setTimeout(() => setStatusText(""), joinAsHost ? 1200 : 500);
         },
         onLeaveRoom: () => {
-          clearAudienceRetryTimer();
-          if (suppressLeaveRef.current) return;
-          void markAttendanceLeave();
-          cbRef.current.onLeave?.();
+          void leaveRoom(!cleanupRef.current);
         },
         onUserJoin: (users: any[]) => {
           setStatusText("");
-          setParticipantCount((c) => {
-            const next = c + (users?.length || 0);
-            cbRef.current.onParticipantCountChange?.(next);
-            return next;
-          });
-          scheduleAudienceRecovery(attempt);
+          updateParticipantCount(participantCount + 1 + (users?.length || 0));
         },
         onUserLeave: (users: any[]) => {
-          setParticipantCount((c) => {
-            const next = Math.max(0, c - (users?.length || 0));
-            cbRef.current.onParticipantCountChange?.(next);
-            return next;
-          });
+          updateParticipantCount(participantCount + 1 - (users?.length || 0));
         },
         onLiveStart: () => setStatusText(""),
         onStreamUpdate: () => setStatusText(""),
@@ -253,24 +213,23 @@ const LiveClass = ({
 
     return () => {
       cancelled = true;
-      clearAudienceRetryTimer();
+      cleanupRef.current = true;
+      clearStatusTimer();
+      void markAttendanceLeave();
       try {
-        zpRef.current?.destroy?.();
-      } catch {}
-      zpRef.current = null;
-      attendanceIdRef.current = null;
-      joinedRef.current = false;
-      initStartedRef.current = false;
-      suppressLeaveRef.current = false;
-      setStatusText("Connecting live class…");
+        zegoRef.current?.destroy?.();
+      } catch (error) {
+        console.warn("[LiveClass] destroy failed", error);
+      }
+      if (containerRef.current) containerRef.current.innerHTML = "";
+      zegoRef.current = null;
+      joinedRoomRef.current = false;
     };
-    // Only depend on identity values that should *actually* re-init the room.
-    // Do NOT depend on callback props — they change every parent render.
-  }, [roomID, user?.id, role, forceHost]);
+  }, [roomID, user?.id, user?.email, profile?.full_name, forceHost]);
 
   if (!user) {
     return (
-      <div className="w-full h-full flex items-center justify-center bg-black text-white text-sm">
+      <div className="w-full h-full flex items-center justify-center bg-background text-foreground text-sm">
         Please sign in to join the live class.
       </div>
     );
@@ -278,14 +237,13 @@ const LiveClass = ({
 
   return (
     <div className={`relative w-full h-full ${className ?? ""}`}>
-      <div ref={containerRef} className="absolute inset-0 w-full h-full bg-black" />
+      <div ref={containerRef} className="absolute inset-0 w-full h-full bg-background" />
       {statusText && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/70 text-foreground text-sm font-medium px-4 text-center">
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/80 text-foreground text-sm font-medium px-4 text-center">
           {statusText}
         </div>
       )}
-      {/* Live participant pill — overlay top-left */}
-      <div className="absolute top-3 left-3 z-20 pointer-events-none flex items-center gap-1.5 bg-black/60 backdrop-blur-sm text-white text-xs font-semibold px-2.5 py-1 rounded-full">
+      <div className="absolute top-3 left-3 z-20 pointer-events-none flex items-center gap-1.5 bg-background/70 backdrop-blur-sm text-foreground text-xs font-semibold px-2.5 py-1 rounded-full border border-border">
         <Users className="w-3 h-3" />
         <span>{participantCount}</span>
         <span className="opacity-70 font-normal">live</span>
