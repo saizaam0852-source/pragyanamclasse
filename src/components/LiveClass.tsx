@@ -57,10 +57,12 @@ const LiveClass = ({
       }
     };
 
-    const updateParticipantCount = (count: number) => {
-      const next = Math.max(0, count);
-      setParticipantCount(next);
-      cbRef.current.onParticipantCountChange?.(next);
+    const setSafeParticipantCount = (updater: number | ((current: number) => number)) => {
+      setParticipantCount((current) => {
+        const next = Math.max(0, typeof updater === "function" ? updater(current) : updater);
+        cbRef.current.onParticipantCountChange?.(next);
+        return next;
+      });
     };
 
     const markAttendanceJoin = async (shouldTrack: boolean) => {
@@ -183,7 +185,7 @@ const LiveClass = ({
         videoScreenConfig: { objectFit: "contain" },
         onJoinRoom: () => {
           joinedRoomRef.current = true;
-          updateParticipantCount(1);
+          setSafeParticipantCount(1);
           void markAttendanceJoin(Boolean(data.trackAttendance));
           clearStatusTimer();
           statusTimerRef.current = window.setTimeout(() => setStatusText(""), joinAsHost ? 1200 : 500);
@@ -193,10 +195,10 @@ const LiveClass = ({
         },
         onUserJoin: (users: any[]) => {
           setStatusText("");
-          updateParticipantCount(participantCount + 1 + (users?.length || 0));
+          setSafeParticipantCount((current) => current + (users?.length || 0));
         },
         onUserLeave: (users: any[]) => {
-          updateParticipantCount(participantCount + 1 - (users?.length || 0));
+          setSafeParticipantCount((current) => current - (users?.length || 0));
         },
         onLiveStart: () => setStatusText(""),
         onStreamUpdate: () => setStatusText(""),
