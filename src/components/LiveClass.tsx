@@ -29,11 +29,17 @@ const LiveClass = ({ classId, onLeave }: LiveClassProps) => {
         const { data, error: fnErr } = await supabase.functions.invoke("get-zego-token", {
           body: { classId },
         });
+        // Don't retry on rate-limit — surface the message immediately
+        const status = (fnErr as any)?.context?.status ?? (data as any)?.status;
+        if (status === 429 || (data as any)?.error?.toString?.().toLowerCase?.().includes("too many")) {
+          throw new Error((data as any)?.error || "Too many requests. Please wait a moment.");
+        }
         if (fnErr) throw new Error(fnErr.message || "Failed to get token");
         if (!data?.token) throw new Error(data?.error || "No token returned");
         return data;
-      } catch (err) {
-        if (attempt < maxAttempts && !cancelled) {
+      } catch (err: any) {
+        const isRateLimited = /too many|429/i.test(err?.message || "");
+        if (!isRateLimited && attempt < maxAttempts && !cancelled) {
           const delay = Math.min(1000 * Math.pow(2, attempt - 1), 4000);
           console.warn(`Zego token fetch failed (attempt ${attempt}/${maxAttempts}), retrying in ${delay}ms`, err);
           setRetryAttempt(attempt);
