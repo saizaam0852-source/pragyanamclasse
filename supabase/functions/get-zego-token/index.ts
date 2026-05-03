@@ -91,9 +91,60 @@ function normalizeId(input: string, prefix = ""): string {
   return (prefix + cleaned).slice(0, 64);
 }
 
+// ----- Rate limiter (in-memory, per instance) -------------------------------------
+// Sliding window per IP. Supabase runs multiple isolates, so this is best-effort
+// burst protection rather than a strict global limit.
+const RL_WINDOW_MS = 60_000;
+const RL_MAX = 20; // 20 requests per IP per minute
+const ipHits = new Map<string, number[]>();
+
+function getClientIp(req: Request): string {
+  const fwd = req.headers.get("x-forwarded-for") || "";
+  return (
+    fwd.split(",")[0].trim() ||
+    req.headers.get("cf-connecting-ip") ||
+    req.headers.get("x-real-ip") ||
+    "unknown"
+  );
+}
+
+function rateLimit(ip: string): { allowed: boolean; retryAfter: number } {
+  const now = Date.now();
+  const arr = (ipHits.get(ip) || []).filter((t) => now - t < RL_WINDOW_MS);
+  if (arr.length >= RL_MAX) {
+    ipHits.set(ip, arr);
+    return { allowed: false, retryAfter: Math.ceil((RL_WINDOW_MS - (now - arr[0])) / 1000) };
+  }
+  arr.push(now);
+  ipHits.set(ip, arr);
+  if (ipHits.size > 5000) {
+    for (const [k, v] of ipHits) {
+      const f = v.filter((t) => now - t < RL_WINDOW_MS);
+      if (f.length === 0) ipHits.delete(k); else ipHits.set(k, f);
+    }
+  }
+  return { allowed: true, retryAfter: 0 };
+}
+
 // ----- Handler --------------------------------------------------------------------
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+
+  const ip = getClientIp(req);
+  const rl = rateLimit(ip);
+  if (!rl.allowed) {
+    return new Response(
+      JSON.stringify({ error: "Too many requests. Please wait and try again." }),
+      {
+        status: 429,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+          "Retry-After": String(rl.retryAfter),
+        },
+      },
+    );
+  }
 
   try {
     if (!ZEGO_APP_ID || !ZEGO_SERVER_SECRET) {
