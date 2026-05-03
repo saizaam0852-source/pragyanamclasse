@@ -152,6 +152,9 @@ const LiveClass = ({ classId, onLeave }: LiveClassProps) => {
           <div className="text-center">
             <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3" />
             <p className="text-sm">Connecting to live class…</p>
+            {retryAttempt > 0 && (
+              <p className="text-xs text-white/70 mt-1">Retrying… (attempt {retryAttempt + 1}/3)</p>
+            )}
           </div>
         </div>
       )}
