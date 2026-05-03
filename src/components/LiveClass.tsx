@@ -15,6 +15,7 @@ const LiveClass = ({ classId, onLeave }: LiveClassProps) => {
   const initializedRef = useRef(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [retryAttempt, setRetryAttempt] = useState(0);
 
   useEffect(() => {
     if (initializedRef.current) return;
@@ -22,18 +23,36 @@ const LiveClass = ({ classId, onLeave }: LiveClassProps) => {
 
     let cancelled = false;
 
+    const fetchToken = async (attempt: number): Promise<any> => {
+      const maxAttempts = 3;
+      try {
+        const { data, error: fnErr } = await supabase.functions.invoke("get-zego-token", {
+          body: { classId },
+        });
+        if (fnErr) throw new Error(fnErr.message || "Failed to get token");
+        if (!data?.token) throw new Error(data?.error || "No token returned");
+        return data;
+      } catch (err) {
+        if (attempt < maxAttempts && !cancelled) {
+          const delay = Math.min(1000 * Math.pow(2, attempt - 1), 4000);
+          console.warn(`Zego token fetch failed (attempt ${attempt}/${maxAttempts}), retrying in ${delay}ms`, err);
+          setRetryAttempt(attempt);
+          await new Promise((r) => setTimeout(r, delay));
+          if (cancelled) throw err;
+          return fetchToken(attempt + 1);
+        }
+        throw err;
+      }
+    };
+
     const init = async () => {
       try {
         setLoading(true);
         setError(null);
+        setRetryAttempt(0);
 
-        const { data, error: fnErr } = await supabase.functions.invoke("get-zego-token", {
-          body: { classId },
-        });
-
+        const data = await fetchToken(1);
         if (cancelled) return;
-        if (fnErr) throw new Error(fnErr.message || "Failed to get token");
-        if (!data?.token) throw new Error(data?.error || "No token returned");
 
         const { token, appID, roomID, userID, userName, role } = data;
 
@@ -133,6 +152,9 @@ const LiveClass = ({ classId, onLeave }: LiveClassProps) => {
           <div className="text-center">
             <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3" />
             <p className="text-sm">Connecting to live class…</p>
+            {retryAttempt > 0 && (
+              <p className="text-xs text-white/70 mt-1">Retrying… (attempt {retryAttempt + 1}/3)</p>
+            )}
           </div>
         </div>
       )}
