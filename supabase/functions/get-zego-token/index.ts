@@ -7,15 +7,14 @@ const ZEGO_SERVER_SECRET = Deno.env.get("ZEGO_SERVER_SECRET") || "";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-// ---- Token04 (AES-GCM) generator -------------------------------------------------
+// ---- Token04 generator -----------------------------------------------------------
 function randomBytes(len: number): Uint8Array {
   const arr = new Uint8Array(len);
   crypto.getRandomValues(arr);
   return arr;
 }
 
-async function aesGcmEncrypt(keyBytes: Uint8Array, iv: Uint8Array, plaintext: Uint8Array): Promise<Uint8Array> {
-  // ZEGO uses AES-CBC with PKCS7 padding for token04 — not GCM. Implement CBC.
+async function aesCbcEncrypt(keyBytes: Uint8Array, iv: Uint8Array, plaintext: Uint8Array): Promise<Uint8Array> {
   const key = await crypto.subtle.importKey("raw", keyBytes, { name: "AES-CBC" }, false, ["encrypt"]);
   const cipher = await crypto.subtle.encrypt({ name: "AES-CBC", iv }, key, plaintext);
   return new Uint8Array(cipher);
@@ -29,12 +28,6 @@ function concatBytes(...arrs: Uint8Array[]): Uint8Array {
   return out;
 }
 
-function int32BE(n: number): Uint8Array {
-  const b = new Uint8Array(4);
-  new DataView(b.buffer).setInt32(0, n, false);
-  return b;
-}
-
 function int64BE(n: number | bigint): Uint8Array {
   const b = new Uint8Array(8);
   new DataView(b.buffer).setBigInt64(0, BigInt(n), false);
@@ -43,7 +36,7 @@ function int64BE(n: number | bigint): Uint8Array {
 
 function int16BE(n: number): Uint8Array {
   const b = new Uint8Array(2);
-  new DataView(b.buffer).setInt16(0, n, false);
+  new DataView(b.buffer).setUint16(0, n, false);
   return b;
 }
 
@@ -65,29 +58,22 @@ async function generateToken04(
   }
   const createTime = Math.floor(Date.now() / 1000);
   const expireTime = createTime + effectiveTimeInSeconds;
-  const nonce = Math.floor(Math.random() * 2147483647);
+  const nonce = Math.floor(-2147483648 + Math.random() * 4294967295);
 
   const enc = new TextEncoder();
-  const userIdBytes = enc.encode(userId);
-  const payloadBytes = enc.encode(payload);
-
-  // info bytes: appId(8) + userIdLen(2) + userId + nonce(8) + ctime(8) + expire(8) + payloadLen(2) + payload
-  const info = concatBytes(
-    int64BE(appId),
-    int16BE(userIdBytes.length),
-    userIdBytes,
-    int64BE(nonce),
-    int64BE(createTime),
-    int64BE(expireTime),
-    int16BE(payloadBytes.length),
-    payloadBytes,
-  );
+  const tokenInfo = JSON.stringify({
+    app_id: appId,
+    user_id: userId,
+    nonce,
+    ctime: createTime,
+    expire: expireTime,
+    payload: payload || "",
+  });
 
   const iv = randomBytes(16);
   const keyBytes = enc.encode(serverSecret);
-  const encrypted = await aesGcmEncrypt(keyBytes, iv, info);
+  const encrypted = await aesCbcEncrypt(keyBytes, iv, enc.encode(tokenInfo));
 
-  // result = expire(8) + ivLen(2) + iv(16) + encLen(2) + encrypted
   const body = concatBytes(
     int64BE(expireTime),
     int16BE(iv.length),
