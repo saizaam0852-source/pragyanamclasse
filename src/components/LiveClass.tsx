@@ -92,6 +92,7 @@ const LiveClass = ({ classId, onLeave }: LiveClassProps) => {
             setLoading(false);
           },
         });
+        setLoading(false);
       } catch (e: any) {
         if (cancelled) return;
         console.error("LiveClass init error:", e);
@@ -128,7 +129,7 @@ const LiveClass = ({ classId, onLeave }: LiveClassProps) => {
   return (
     <div className="relative w-full h-full min-h-[60vh] bg-black">
       {loading && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/80 text-white">
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-black/80 text-white">
           <div className="text-center">
             <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3" />
             <p className="text-sm">Connecting to live class…</p>
