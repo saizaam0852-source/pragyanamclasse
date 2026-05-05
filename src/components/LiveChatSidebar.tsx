@@ -139,7 +139,7 @@ const LiveChatSidebar = ({ classId, isHost, currentUserId, currentUserName }: Li
                   <div className="flex items-center justify-between gap-2 mb-0.5">
                     <span className="text-[11px] font-semibold text-foreground/80 truncate">{m.user_name || (isHi ? "उपयोगकर्ता" : "User")}</span>
                     {tab === "doubt" && m.is_resolved && (
-                      <span className="text-[10px] text-success flex items-center gap-0.5"><CheckCircle2 className="w-3 h-3" />{isHi ? "हल" : "Resolved"}</span>
+                      <span className="text-[10px] text-primary flex items-center gap-0.5"><CheckCircle2 className="w-3 h-3" />{isHi ? "हल" : "Resolved"}</span>
                     )}
                   </div>
                   <p className="text-foreground break-words whitespace-pre-wrap">{m.message}</p>
@@ -150,7 +150,7 @@ const LiveChatSidebar = ({ classId, isHost, currentUserId, currentUserName }: Li
                       </button>
                     )}
                     {tab === "doubt" && isHost && !m.is_resolved && (
-                      <button onClick={() => resolveDoubt(m.id)} className="text-[10px] text-success hover:underline">
+                      <button onClick={() => resolveDoubt(m.id)} className="text-[10px] text-primary hover:underline">
                         {isHi ? "हल चिह्नित करें" : "Mark resolved"}
                       </button>
                     )}
