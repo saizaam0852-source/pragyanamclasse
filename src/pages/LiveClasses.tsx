@@ -362,8 +362,75 @@ const ClassCard = ({ cls, isHi, canManage, userId, onJoin, onStart, onEnd, onDel
           <span className="text-xs text-muted-foreground self-center">{isHi ? "जल्द ही" : "Starts soon"}</span>
         )}
         {ended && <span className="text-xs text-muted-foreground self-center">{isHi ? "समाप्त" : "Ended"}</span>}
+        {isOwner && onAttendance && (
+          <Button size="sm" variant="outline" onClick={onAttendance} title={isHi ? "उपस्थिति" : "Attendance"}>
+            <ClipboardList className="w-3.5 h-3.5" />
+          </Button>
+        )}
       </div>
     </motion.div>
+  );
+};
+
+const AttendanceDialog = ({ cls, isHi, open, onClose }: { cls: LiveClassRow | null; isHi: boolean; open: boolean; onClose: () => void }) => {
+  const [rows, setRows] = useState<Array<{ id: string; student_id: string; join_time: string; leave_time: string | null; full_name: string }>>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!cls) return;
+    setLoading(true);
+    (async () => {
+      const { data: att } = await supabase
+        .from("attendance")
+        .select("id, student_id, join_time, leave_time")
+        .eq("class_id", cls.id)
+        .order("join_time", { ascending: true });
+      const ids = Array.from(new Set((att || []).map(a => a.student_id)));
+      let names: Record<string, string> = {};
+      if (ids.length) {
+        const { data: profs } = await supabase
+          .from("profiles").select("user_id, full_name").in("user_id", ids);
+        names = Object.fromEntries((profs || []).map(p => [p.user_id, p.full_name || "Student"]));
+      }
+      setRows((att || []).map(a => ({ ...a, full_name: names[a.student_id] || "Student" })));
+      setLoading(false);
+    })();
+  }, [cls]);
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <ClipboardList className="w-4 h-4" />{isHi ? "उपस्थिति" : "Attendance"} — {cls?.title}
+          </DialogTitle>
+        </DialogHeader>
+        {loading ? (
+          <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin" /></div>
+        ) : rows.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-6 text-center">{isHi ? "अभी कोई उपस्थिति नहीं" : "No attendance recorded yet"}</p>
+        ) : (
+          <div className="max-h-80 overflow-y-auto divide-y divide-border">
+            {rows.map(r => {
+              const join = new Date(r.join_time);
+              const leave = r.leave_time ? new Date(r.leave_time) : null;
+              const dur = leave ? Math.max(1, Math.round((leave.getTime() - join.getTime()) / 60000)) : null;
+              return (
+                <div key={r.id} className="py-2 flex items-center justify-between text-sm">
+                  <span className="font-medium text-foreground truncate">{r.full_name}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {join.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+                    {dur != null && ` · ${dur}m`}
+                    {!leave && <span className="ml-1 text-primary">● live</span>}
+                  </span>
+                </div>
+              );
+            })}
+            <div className="pt-2 text-xs text-muted-foreground">{isHi ? "कुल" : "Total"}: {new Set(rows.map(r => r.student_id)).size}</div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 };
 
