@@ -106,16 +106,20 @@ const LiveClasses = () => {
   const handleStart = async (cls: LiveClassRow) => {
     const { error } = await supabase
       .from("live_classes")
-      .update({ status: "live" })
+      .update({ status: "live", started_at: new Date().toISOString() })
       .eq("id", cls.id);
     if (error) { toast.error(error.message); return; }
     setSearchParams({ classId: cls.id });
   };
 
   const handleEnd = async (cls: LiveClassRow) => {
-    await supabase.from("live_classes").update({ status: "ended" }).eq("id", cls.id);
+    await supabase.from("live_classes")
+      .update({ status: "ended", ended_at: new Date().toISOString() })
+      .eq("id", cls.id);
     fetchClasses();
   };
+
+  const [attendanceFor, setAttendanceFor] = useState<LiveClassRow | null>(null);
 
   const handleJoin = (cls: LiveClassRow) => {
     if (cls.status !== "live") {
