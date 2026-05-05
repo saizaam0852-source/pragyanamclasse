@@ -16,6 +16,7 @@ export type Database = {
     Tables: {
       attendance: {
         Row: {
+          class_id: string | null
           created_at: string
           id: string
           join_time: string
@@ -25,6 +26,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          class_id?: string | null
           created_at?: string
           id?: string
           join_time?: string
@@ -34,6 +36,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          class_id?: string | null
           created_at?: string
           id?: string
           join_time?: string
@@ -382,7 +385,10 @@ export type Database = {
           class_id: string
           created_at: string
           id: string
+          is_resolved: boolean
           message: string
+          message_type: string
+          parent_id: string | null
           user_id: string
           user_name: string
         }
@@ -390,7 +396,10 @@ export type Database = {
           class_id: string
           created_at?: string
           id?: string
+          is_resolved?: boolean
           message: string
+          message_type?: string
+          parent_id?: string | null
           user_id: string
           user_name?: string
         }
@@ -398,7 +407,10 @@ export type Database = {
           class_id?: string
           created_at?: string
           id?: string
+          is_resolved?: boolean
           message?: string
+          message_type?: string
+          parent_id?: string | null
           user_id?: string
           user_name?: string
         }
@@ -410,6 +422,13 @@ export type Database = {
             referencedRelation: "live_classes"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "live_chat_messages_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "live_chat_messages"
+            referencedColumns: ["id"]
+          },
         ]
       }
       live_classes: {
@@ -419,10 +438,12 @@ export type Database = {
           current_students: number
           description: string | null
           duration_minutes: number | null
+          ended_at: string | null
           id: string
           max_students: number
           room_id: string
           scheduled_at: string
+          started_at: string | null
           status: string
           teacher_id: string
           thumbnail_url: string | null
@@ -436,10 +457,12 @@ export type Database = {
           current_students?: number
           description?: string | null
           duration_minutes?: number | null
+          ended_at?: string | null
           id?: string
           max_students?: number
           room_id?: string
           scheduled_at: string
+          started_at?: string | null
           status?: string
           teacher_id: string
           thumbnail_url?: string | null
@@ -453,10 +476,12 @@ export type Database = {
           current_students?: number
           description?: string | null
           duration_minutes?: number | null
+          ended_at?: string | null
           id?: string
           max_students?: number
           room_id?: string
           scheduled_at?: string
+          started_at?: string | null
           status?: string
           teacher_id?: string
           thumbnail_url?: string | null
@@ -925,6 +950,7 @@ export type Database = {
       }
     }
     Functions: {
+      auto_end_live_classes: { Args: never; Returns: undefined }
       backfill_profile_from_auth_metadata: { Args: never; Returns: undefined }
       get_test_questions_safe: {
         Args: { _test_id: string }

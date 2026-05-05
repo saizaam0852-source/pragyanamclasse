@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { ZegoUIKitPrebuilt } from "@zegocloud/zego-uikit-prebuilt";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, AlertCircle } from "lucide-react";
+import { Loader2, AlertCircle, MessageSquare, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import LiveChatSidebar from "./LiveChatSidebar";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface LiveClassProps {
   classId: string;
@@ -10,12 +12,17 @@ interface LiveClassProps {
 }
 
 const LiveClass = ({ classId, onLeave }: LiveClassProps) => {
+  const { user } = useAuth();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const zegoRef = useRef<any>(null);
   const initializedRef = useRef(false);
+  const attendanceIdRef = useRef<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [retryAttempt, setRetryAttempt] = useState(0);
+  const [isHost, setIsHost] = useState(false);
+  const [chatOpen, setChatOpen] = useState(true);
+  const [userName, setUserName] = useState("");
 
   useEffect(() => {
     if (initializedRef.current) return;
@@ -29,7 +36,6 @@ const LiveClass = ({ classId, onLeave }: LiveClassProps) => {
         const { data, error: fnErr } = await supabase.functions.invoke("get-zego-token", {
           body: { classId },
         });
-        // Don't retry on rate-limit — surface the message immediately
         const status = (fnErr as any)?.context?.status ?? (data as any)?.status;
         if (status === 429 || (data as any)?.error?.toString?.().toLowerCase?.().includes("too many")) {
           throw new Error((data as any)?.error || "Too many requests. Please wait a moment.");
@@ -41,7 +47,6 @@ const LiveClass = ({ classId, onLeave }: LiveClassProps) => {
         const isRateLimited = /too many|429/i.test(err?.message || "");
         if (!isRateLimited && attempt < maxAttempts && !cancelled) {
           const delay = Math.min(1000 * Math.pow(2, attempt - 1), 4000);
-          console.warn(`Zego token fetch failed (attempt ${attempt}/${maxAttempts}), retrying in ${delay}ms`, err);
           setRetryAttempt(attempt);
           await new Promise((r) => setTimeout(r, delay));
           if (cancelled) throw err;
@@ -49,6 +54,26 @@ const LiveClass = ({ classId, onLeave }: LiveClassProps) => {
         }
         throw err;
       }
+    };
+
+    const recordJoin = async (host: boolean) => {
+      if (host || !user?.id) return; // record attendance for students only
+      const { data: cls } = await supabase
+        .from("live_classes")
+        .select("room_id")
+        .eq("id", classId)
+        .maybeSingle();
+      const { data, error } = await supabase
+        .from("attendance")
+        .insert({
+          student_id: user.id,
+          class_id: classId,
+          room_id: cls?.room_id || classId,
+          join_time: new Date().toISOString(),
+        })
+        .select("id")
+        .maybeSingle();
+      if (!error && data) attendanceIdRef.current = data.id;
     };
 
     const init = async () => {
@@ -60,14 +85,13 @@ const LiveClass = ({ classId, onLeave }: LiveClassProps) => {
         const data = await fetchToken(1);
         if (cancelled) return;
 
-        const { token, appID, roomID, userID, userName, role } = data;
+        const { token, appID, roomID, userID, userName: uName, role } = data;
+        setUserName(uName || "");
+        const host = role === "host";
+        setIsHost(host);
 
         const kitToken = ZegoUIKitPrebuilt.generateKitTokenForProduction(
-          Number(appID),
-          token,
-          roomID,
-          userID,
-          userName,
+          Number(appID), token, roomID, userID, uName,
         );
 
         if (!containerRef.current || cancelled) return;
@@ -75,46 +99,41 @@ const LiveClass = ({ classId, onLeave }: LiveClassProps) => {
         const zego = ZegoUIKitPrebuilt.create(kitToken);
         zegoRef.current = zego;
 
-        const isHost = role === "host";
-
         zego.joinRoom({
           container: containerRef.current,
           scenario: {
             mode: ZegoUIKitPrebuilt.LiveStreaming,
             config: {
-              role: isHost ? ZegoUIKitPrebuilt.Host : ZegoUIKitPrebuilt.Audience,
+              role: host ? ZegoUIKitPrebuilt.Host : ZegoUIKitPrebuilt.Audience,
               liveStreamingMode: ZegoUIKitPrebuilt.LiveStreamingMode.RealTimeLive,
             },
           },
           showPreJoinView: false,
-          turnOnCameraWhenJoining: isHost,
-          turnOnMicrophoneWhenJoining: isHost,
+          turnOnCameraWhenJoining: host,
+          turnOnMicrophoneWhenJoining: host,
           useFrontFacingCamera: true,
-          showMyCameraToggleButton: isHost,
-          showMyMicrophoneToggleButton: isHost,
-          showAudioVideoSettingsButton: isHost,
-          showScreenSharingButton: isHost,
+          showMyCameraToggleButton: host,
+          showMyMicrophoneToggleButton: host,
+          showAudioVideoSettingsButton: host,
+          showScreenSharingButton: host,
           showRoomDetailsButton: false,
-          showTextChat: true,
+          showTextChat: false,
           showUserList: true,
           maxUsers: 100,
           layout: "Auto",
-          showLayoutButton: isHost,
+          showLayoutButton: host,
           showLeaveRoomConfirmDialog: false,
           showLeavingView: false,
           liveNotStartedTextForAudience: "Waiting for teacher to start the class…",
           startLiveButtonText: "Start Class",
-          videoScreenConfig: {
-            objectFit: "contain",
-            localMirror: true,
-            pullStreamMirror: false,
-          },
+          videoScreenConfig: { objectFit: "contain", localMirror: true, pullStreamMirror: false },
           onLeaveRoom: () => {
             try { zego.destroy(); } catch (_) { /* noop */ }
             onLeave?.();
           },
           onJoinRoom: () => {
             setLoading(false);
+            recordJoin(host);
           },
         });
         setLoading(false);
@@ -130,11 +149,17 @@ const LiveClass = ({ classId, onLeave }: LiveClassProps) => {
 
     return () => {
       cancelled = true;
+      // mark leave time for attendance
+      if (attendanceIdRef.current) {
+        supabase.from("attendance")
+          .update({ leave_time: new Date().toISOString() })
+          .eq("id", attendanceIdRef.current);
+      }
       try { zegoRef.current?.destroy(); } catch (_) { /* noop */ }
       zegoRef.current = null;
       initializedRef.current = false;
     };
-  }, [classId, onLeave]);
+  }, [classId, onLeave, user?.id]);
 
   if (error) {
     return (
@@ -152,19 +177,68 @@ const LiveClass = ({ classId, onLeave }: LiveClassProps) => {
   }
 
   return (
-    <div className="relative w-full h-full min-h-[60vh] bg-black">
-      {loading && (
-        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-black/80 text-white">
-          <div className="text-center">
-            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3" />
-            <p className="text-sm">Connecting to live class…</p>
-            {retryAttempt > 0 && (
-              <p className="text-xs text-white/70 mt-1">Retrying… (attempt {retryAttempt + 1}/3)</p>
-            )}
+    <div className="relative w-full h-full min-h-[60vh] bg-black flex">
+      <div className="relative flex-1 min-w-0">
+        {loading && (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-black/80 text-white">
+            <div className="text-center">
+              <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3" />
+              <p className="text-sm">Connecting to live class…</p>
+              {retryAttempt > 0 && (
+                <p className="text-xs text-white/70 mt-1">Retrying… (attempt {retryAttempt + 1}/3)</p>
+              )}
+            </div>
           </div>
+        )}
+        <div ref={containerRef} className="w-full h-full min-h-[60vh]" />
+
+        {!chatOpen && (
+          <button
+            onClick={() => setChatOpen(true)}
+            className="absolute bottom-4 right-4 z-20 bg-primary text-primary-foreground rounded-full p-3 shadow-lg"
+            aria-label="Open chat"
+          >
+            <MessageSquare className="w-5 h-5" />
+          </button>
+        )}
+      </div>
+
+      {chatOpen && user && (
+        <div className="hidden md:flex w-80 shrink-0 flex-col relative">
+          <button
+            onClick={() => setChatOpen(false)}
+            className="absolute top-1 right-1 z-10 p-1 rounded hover:bg-muted text-muted-foreground"
+            aria-label="Close chat"
+          >
+            <X className="w-4 h-4" />
+          </button>
+          <LiveChatSidebar
+            classId={classId}
+            isHost={isHost}
+            currentUserId={user.id}
+            currentUserName={userName || user.email || "User"}
+          />
         </div>
       )}
-      <div ref={containerRef} className="w-full h-full min-h-[60vh]" />
+
+      {/* Mobile chat drawer */}
+      {chatOpen && user && (
+        <div className="md:hidden fixed inset-x-0 bottom-0 top-1/2 z-30 bg-card border-t border-border rounded-t-2xl flex flex-col">
+          <button
+            onClick={() => setChatOpen(false)}
+            className="absolute top-2 right-2 z-10 p-1 rounded hover:bg-muted text-muted-foreground"
+            aria-label="Close chat"
+          >
+            <X className="w-4 h-4" />
+          </button>
+          <LiveChatSidebar
+            classId={classId}
+            isHost={isHost}
+            currentUserId={user.id}
+            currentUserName={userName || user.email || "User"}
+          />
+        </div>
+      )}
     </div>
   );
 };
