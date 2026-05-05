@@ -247,7 +247,8 @@ const LiveClasses = () => {
                 <div className="grid sm:grid-cols-2 gap-3">
                   {live.map(c => (
                     <ClassCard key={c.id} cls={c} isHi={isHi} canManage={canManage} userId={user?.id}
-                      onJoin={() => handleJoin(c)} onEnd={() => handleEnd(c)} onDelete={() => handleDelete(c)} />
+                      onJoin={() => handleJoin(c)} onEnd={() => handleEnd(c)} onDelete={() => handleDelete(c)}
+                      onAttendance={() => setAttendanceFor(c)} />
                   ))}
                 </div>
               )}
@@ -269,7 +270,7 @@ const LiveClasses = () => {
                 <div className="grid sm:grid-cols-2 gap-3">
                   {ended.slice(0, 6).map(c => (
                     <ClassCard key={c.id} cls={c} isHi={isHi} canManage={canManage} userId={user?.id}
-                      ended onDelete={() => handleDelete(c)} />
+                      ended onDelete={() => handleDelete(c)} onAttendance={() => setAttendanceFor(c)} />
                   ))}
                 </div>
               </Section>
@@ -277,6 +278,13 @@ const LiveClasses = () => {
           </>
         )}
       </div>
+
+      <AttendanceDialog
+        cls={attendanceFor}
+        isHi={isHi}
+        open={!!attendanceFor}
+        onClose={() => setAttendanceFor(null)}
+      />
     </DashboardLayout>
   );
 };
