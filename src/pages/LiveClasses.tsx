@@ -303,7 +303,7 @@ const Empty = ({ text }: { text: string }) => (
   <div className="text-sm text-muted-foreground text-center py-6 bg-card border border-border border-dashed rounded-xl">{text}</div>
 );
 
-const ClassCard = ({ cls, isHi, canManage, userId, onJoin, onStart, onEnd, onDelete, ended }: {
+const ClassCard = ({ cls, isHi, canManage, userId, onJoin, onStart, onEnd, onDelete, onAttendance, ended }: {
   cls: LiveClassRow;
   isHi: boolean;
   canManage: boolean;
@@ -312,6 +312,7 @@ const ClassCard = ({ cls, isHi, canManage, userId, onJoin, onStart, onEnd, onDel
   onStart?: () => void;
   onEnd?: () => void;
   onDelete?: () => void;
+  onAttendance?: () => void;
   ended?: boolean;
 }) => {
   const isOwner = canManage && cls.teacher_id === userId;
