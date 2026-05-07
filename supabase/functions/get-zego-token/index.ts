@@ -3,15 +3,18 @@ import { createClient } from "npm:@supabase/supabase-js@2.95.0";
 import { corsHeaders } from "npm:@supabase/supabase-js@2.95.0/cors";
 
 const ZEGO_APP_ID = Number(Deno.env.get("ZEGO_APP_ID") || "0");
-const ZEGO_SERVER_SECRET = Deno.env.get("ZEGO_SERVER_SECRET") || "";
+const ZEGO_SERVER_SECRET = (Deno.env.get("ZEGO_SERVER_SECRET") || "").trim();
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 // ---- Token04 generator -----------------------------------------------------------
-function randomBytes(len: number): Uint8Array {
-  const arr = new Uint8Array(len);
-  crypto.getRandomValues(arr);
-  return arr;
+function makeRandomIv(): string {
+  const alphabet = "0123456789abcdefghijklmnopqrstuvwxyz";
+  let result = "";
+  const random = new Uint8Array(16);
+  crypto.getRandomValues(random);
+  for (let i = 0; i < 16; i++) result += alphabet[random[i] % alphabet.length];
+  return result;
 }
 
 async function aesCbcEncrypt(keyBytes: Uint8Array, iv: Uint8Array, plaintext: Uint8Array): Promise<Uint8Array> {
@@ -70,7 +73,10 @@ async function generateToken04(
     payload: payload || "",
   });
 
-  const iv = randomBytes(16);
+  // Matches ZEGOCLOUD's official Token04 Node helper: AES-CBC + a 16-char IV,
+  // then pack expire | iv length | iv | encrypted length | encrypted body.
+  const ivText = makeRandomIv();
+  const iv = enc.encode(ivText);
   const keyBytes = enc.encode(serverSecret);
   const encrypted = await aesCbcEncrypt(keyBytes, iv, enc.encode(tokenInfo));
 
@@ -169,6 +175,12 @@ Deno.serve(async (req) => {
     }
     const user = userData.user;
 
+    try {
+      await supabase.rpc("auto_update_live_classes");
+    } catch (_) {
+      // The scheduled database job also keeps statuses updated; don't block joins on sync failures.
+    }
+
     const body = await req.json().catch(() => ({}));
     const classId: string | undefined = body.classId;
     if (!classId) {
@@ -190,6 +202,12 @@ Deno.serve(async (req) => {
       });
     }
 
+    if (liveClass.status !== "live") {
+      return new Response(JSON.stringify({ error: "Class is not live yet" }), {
+        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // Determine role
     const { data: roleRow } = await supabase
       .from("user_roles").select("role").eq("user_id", user.id);
@@ -199,13 +217,19 @@ Deno.serve(async (req) => {
     const isOwner = liveClass.teacher_id === user.id;
     const canHost = isAdmin || (isTeacher && isOwner);
 
-    // If student, must be enrolled (when class is tied to a course)
-    if (!canHost && liveClass.course_id) {
+    // Students must join through a course-linked class with an active enrollment.
+    if (!canHost && !liveClass.course_id) {
+      return new Response(JSON.stringify({ error: "This live class is not linked to a course" }), {
+        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (!canHost) {
       const { data: enrolment } = await supabase
         .from("enrollments")
         .select("id")
         .eq("user_id", user.id)
-        .eq("course_id", liveClass.course_id)
+        .eq("course_id", liveClass.course_id!)
         .eq("status", "active")
         .maybeSingle();
       if (!enrolment) {

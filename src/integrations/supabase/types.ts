@@ -951,6 +951,7 @@ export type Database = {
     }
     Functions: {
       auto_end_live_classes: { Args: never; Returns: undefined }
+      auto_update_live_classes: { Args: never; Returns: undefined }
       backfill_profile_from_auth_metadata: { Args: never; Returns: undefined }
       get_test_questions_safe: {
         Args: { _test_id: string }
