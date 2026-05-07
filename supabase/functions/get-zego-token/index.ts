@@ -175,7 +175,11 @@ Deno.serve(async (req) => {
     }
     const user = userData.user;
 
-    await supabase.rpc("auto_update_live_classes").catch(() => null);
+    try {
+      await supabase.rpc("auto_update_live_classes");
+    } catch (_) {
+      // The scheduled database job also keeps statuses updated; don't block joins on sync failures.
+    }
 
     const body = await req.json().catch(() => ({}));
     const classId: string | undefined = body.classId;
@@ -213,13 +217,19 @@ Deno.serve(async (req) => {
     const isOwner = liveClass.teacher_id === user.id;
     const canHost = isAdmin || (isTeacher && isOwner);
 
-    // If student, must be enrolled (when class is tied to a course)
-    if (!canHost && liveClass.course_id) {
+    // Students must join through a course-linked class with an active enrollment.
+    if (!canHost && !liveClass.course_id) {
+      return new Response(JSON.stringify({ error: "This live class is not linked to a course" }), {
+        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (!canHost) {
       const { data: enrolment } = await supabase
         .from("enrollments")
         .select("id")
         .eq("user_id", user.id)
-        .eq("course_id", liveClass.course_id)
+        .eq("course_id", liveClass.course_id!)
         .eq("status", "active")
         .maybeSingle();
       if (!enrolment) {
