@@ -8,10 +8,13 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 // ---- Token04 generator -----------------------------------------------------------
-function randomBytes(len: number): Uint8Array {
-  const arr = new Uint8Array(len);
-  crypto.getRandomValues(arr);
-  return arr;
+function makeRandomIv(): string {
+  const alphabet = "0123456789abcdefghijklmnopqrstuvwxyz";
+  let result = "";
+  const random = new Uint8Array(16);
+  crypto.getRandomValues(random);
+  for (let i = 0; i < 16; i++) result += alphabet[random[i] % alphabet.length];
+  return result;
 }
 
 async function aesCbcEncrypt(keyBytes: Uint8Array, iv: Uint8Array, plaintext: Uint8Array): Promise<Uint8Array> {
@@ -70,7 +73,10 @@ async function generateToken04(
     payload: payload || "",
   });
 
-  const iv = randomBytes(16);
+  // Matches ZEGOCLOUD's official Token04 Node helper: AES-CBC + a 16-char IV,
+  // then pack expire | iv length | iv | encrypted length | encrypted body.
+  const ivText = makeRandomIv();
+  const iv = enc.encode(ivText);
   const keyBytes = enc.encode(serverSecret);
   const encrypted = await aesCbcEncrypt(keyBytes, iv, enc.encode(tokenInfo));
 
