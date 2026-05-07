@@ -175,6 +175,8 @@ Deno.serve(async (req) => {
     }
     const user = userData.user;
 
+    await supabase.rpc("auto_update_live_classes").catch(() => null);
+
     const body = await req.json().catch(() => ({}));
     const classId: string | undefined = body.classId;
     if (!classId) {
@@ -193,6 +195,12 @@ Deno.serve(async (req) => {
     if (lcErr || !liveClass) {
       return new Response(JSON.stringify({ error: "Live class not found" }), {
         status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (liveClass.status !== "live") {
+      return new Response(JSON.stringify({ error: "Class is not live yet" }), {
+        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
