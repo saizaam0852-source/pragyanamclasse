@@ -3,7 +3,7 @@ import { createClient } from "npm:@supabase/supabase-js@2.95.0";
 import { corsHeaders } from "npm:@supabase/supabase-js@2.95.0/cors";
 
 const ZEGO_APP_ID = Number(Deno.env.get("ZEGO_APP_ID") || "0");
-const ZEGO_SERVER_SECRET = Deno.env.get("ZEGO_SERVER_SECRET") || "";
+const ZEGO_SERVER_SECRET = (Deno.env.get("ZEGO_SERVER_SECRET") || "").trim();
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
