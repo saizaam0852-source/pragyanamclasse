@@ -17,12 +17,15 @@ const LiveClass = ({ classId, onLeave }: LiveClassProps) => {
   const zegoRef = useRef<any>(null);
   const initializedRef = useRef(false);
   const attendanceIdRef = useRef<string | null>(null);
+  const onLeaveRef = useRef(onLeave);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [retryAttempt, setRetryAttempt] = useState(0);
   const [isHost, setIsHost] = useState(false);
   const [chatOpen, setChatOpen] = useState(true);
   const [userName, setUserName] = useState("");
+
+  useEffect(() => { onLeaveRef.current = onLeave; }, [onLeave]);
 
   useEffect(() => {
     if (initializedRef.current) return;
@@ -122,6 +125,7 @@ const LiveClass = ({ classId, onLeave }: LiveClassProps) => {
           maxUsers: 100,
           layout: "Auto",
           showLayoutButton: host,
+          showRoomTimer: true,
           showLeaveRoomConfirmDialog: false,
           showLeavingView: false,
           liveNotStartedTextForAudience: "Waiting for teacher to start the class…",
@@ -129,14 +133,13 @@ const LiveClass = ({ classId, onLeave }: LiveClassProps) => {
           videoScreenConfig: { objectFit: "contain", localMirror: true, pullStreamMirror: false },
           onLeaveRoom: () => {
             try { zego.destroy(); } catch (_) { /* noop */ }
-            onLeave?.();
+            onLeaveRef.current?.();
           },
           onJoinRoom: () => {
             setLoading(false);
             recordJoin(host);
           },
         });
-        setLoading(false);
       } catch (e: any) {
         if (cancelled) return;
         console.error("LiveClass init error:", e);
@@ -159,7 +162,7 @@ const LiveClass = ({ classId, onLeave }: LiveClassProps) => {
       zegoRef.current = null;
       initializedRef.current = false;
     };
-  }, [classId, onLeave, user?.id]);
+  }, [classId, user?.id]);
 
   if (error) {
     return (
