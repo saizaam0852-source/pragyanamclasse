@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -39,6 +40,7 @@ const LiveClasses = () => {
   const activeClassId = searchParams.get("classId");
 
   const [classes, setClasses] = useState<LiveClassRow[]>([]);
+  const [courses, setCourses] = useState<Array<{ id: string; title: string }>>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -46,6 +48,7 @@ const LiveClasses = () => {
     title: "",
     title_hi: "",
     description: "",
+    course_id: "",
     scheduled_at: "",
     duration_minutes: 60,
   });
@@ -68,6 +71,17 @@ const LiveClasses = () => {
 
   useEffect(() => { fetchClasses(); }, [fetchClasses]);
 
+  useEffect(() => {
+    if (!canManage || !user?.id) return;
+    let query = supabase
+      .from("courses")
+      .select("id, title")
+      .order("title", { ascending: true });
+    if (role === "teacher") query = query.eq("created_by", user.id);
+    query
+      .then(({ data }) => setCourses((data || []) as Array<{ id: string; title: string }>));
+  }, [canManage, role, user?.id]);
+
   // Realtime updates so status changes appear instantly
   useEffect(() => {
     const channel = supabase
@@ -82,8 +96,8 @@ const LiveClasses = () => {
   const handleSchedule = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
-    if (!form.title || !form.scheduled_at) {
-      toast.error(isHi ? "शीर्षक और समय आवश्यक है" : "Title and time are required");
+    if (!form.title || !form.scheduled_at || !form.course_id) {
+      toast.error(isHi ? "कोर्स, शीर्षक और समय आवश्यक है" : "Course, title and time are required");
       return;
     }
     setSubmitting(true);
@@ -91,6 +105,7 @@ const LiveClasses = () => {
       title: form.title,
       title_hi: form.title_hi || form.title,
       description: form.description || null,
+      course_id: form.course_id,
       scheduled_at: new Date(form.scheduled_at).toISOString(),
       duration_minutes: form.duration_minutes,
       teacher_id: user.id,
@@ -99,7 +114,7 @@ const LiveClasses = () => {
     setSubmitting(false);
     if (error) { toast.error(error.message); return; }
     toast.success(isHi ? "लाइव क्लास शेड्यूल हो गई" : "Live class scheduled");
-    setForm({ title: "", title_hi: "", description: "", scheduled_at: "", duration_minutes: 60 });
+    setForm({ title: "", title_hi: "", description: "", course_id: "", scheduled_at: "", duration_minutes: 60 });
     setShowForm(false);
     fetchClasses();
   };
@@ -215,6 +230,24 @@ const LiveClasses = () => {
               <div>
                 <Label className="text-xs">{isHi ? "विवरण" : "Description"}</Label>
                 <Textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} className="mt-1" rows={2} />
+              </div>
+              <div>
+                <Label className="text-xs">{isHi ? "कोर्स" : "Course"}</Label>
+                <Select value={form.course_id} onValueChange={(value) => setForm({ ...form, course_id: value })}>
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder={isHi ? "कोर्स चुनें" : "Select course"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {courses.map((course) => (
+                      <SelectItem key={course.id} value={course.id}>{course.title}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {courses.length === 0 && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {isHi ? "पहले एक कोर्स बनाएं" : "Create a course first"}
+                  </p>
+                )}
               </div>
               <div className="grid sm:grid-cols-2 gap-3">
                 <div>
