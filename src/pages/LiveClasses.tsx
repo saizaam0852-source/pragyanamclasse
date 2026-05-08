@@ -73,12 +73,14 @@ const LiveClasses = () => {
 
   useEffect(() => {
     if (!canManage || !user?.id) return;
-    supabase
+    let query = supabase
       .from("courses")
       .select("id, title")
-      .order("title", { ascending: true })
+      .order("title", { ascending: true });
+    if (role === "teacher") query = query.eq("created_by", user.id);
+    query
       .then(({ data }) => setCourses((data || []) as Array<{ id: string; title: string }>));
-  }, [canManage, user?.id]);
+  }, [canManage, role, user?.id]);
 
   // Realtime updates so status changes appear instantly
   useEffect(() => {
