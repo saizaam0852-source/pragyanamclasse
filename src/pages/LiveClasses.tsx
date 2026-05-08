@@ -229,6 +229,24 @@ const LiveClasses = () => {
                 <Label className="text-xs">{isHi ? "विवरण" : "Description"}</Label>
                 <Textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} className="mt-1" rows={2} />
               </div>
+              <div>
+                <Label className="text-xs">{isHi ? "कोर्स" : "Course"}</Label>
+                <Select value={form.course_id} onValueChange={(value) => setForm({ ...form, course_id: value })}>
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder={isHi ? "कोर्स चुनें" : "Select course"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {courses.map((course) => (
+                      <SelectItem key={course.id} value={course.id}>{course.title}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {courses.length === 0 && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {isHi ? "पहले एक कोर्स बनाएं" : "Create a course first"}
+                  </p>
+                )}
+              </div>
               <div className="grid sm:grid-cols-2 gap-3">
                 <div>
                   <Label className="text-xs">{isHi ? "तिथि और समय" : "Date & time"}</Label>
